@@ -50,10 +50,9 @@ link:
 plot:
 	echo $(SIM_RNG_RUNS) | tr ' ' '\n' | /usr/bin/parallel \
 		$(PYTHON_BIN) ./scripts/plot-movement.py \
-			--x_max=$(SIM_AREA_SIZE_X) \
-			--y_max=$(SIM_AREA_SIZE_Y) \
 			--input_path="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/movement.csv" \
-			--output_path="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/movement_plot.png"
+			--output_path="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/plot.png"
+
 
 run_ns3:
 	echo $(SIM_RNG_RUNS) | tr ' ' '\n' | /usr/bin/parallel \
@@ -65,6 +64,7 @@ run_ns3:
 			--spineVariant=$(SIM_SPINE_VARIANT) \
 			--packetsPerSecond=$(SIM_PACKETS_PER_SECOND) \
 			--packetsSize=$(SIM_PACKETS_SIZE) \
+			--wifiType=$(SIM_WIFI_TYPE) \
 			--areaSizeX=$(SIM_AREA_SIZE_X) \
 			--areaSizeY=$(SIM_AREA_SIZE_Y) \
 			--resultsPath="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}" \
