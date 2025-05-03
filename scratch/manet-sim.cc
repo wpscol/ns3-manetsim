@@ -1,6 +1,8 @@
 // TODO:
 // - throughput
 // - delays
+// - packet to the nearest spine node == within network/online
+// - loss propagation
 // - obstacles
 // - terrain
 // - more network configuration
@@ -205,7 +207,7 @@ int main(int argc, char* argv[]) {
   movementCsvOutput << "id,time,node,x,y,z,speed" << std::endl;
   Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectMovementData, nodes);
 
-  linkStateCsvOutput << "id,time,node,online" << std::endl;
+  linkStateCsvOutput << "id,time,node,link" << std::endl;
   Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectConnectivityData, nodes);
 
   // Physical layer configuration
@@ -399,9 +401,9 @@ void collectConnectivityData(const NodeContainer& nodes) {
   Time simNowTime = Simulator::Now();
 
   for (uint32_t i = 0; i < nodes.GetN(); i++) {
-    bool online = !g_neighbors[nodes.Get(i)->GetId()].empty();
+    bool linkUp = !g_neighbors[nodes.Get(i)->GetId()].empty();
     linkStateCsvOutput << linkStateCsvOutputIterator++ << ',' << simNowTime.GetSeconds() << ',' << nodes.Get(i)->GetId()
-                       << "," << online << std::endl;
+                       << "," << linkUp << std::endl;
     // clear for next interval
     g_neighbors[nodes.Get(i)->GetId()].clear();
   }
