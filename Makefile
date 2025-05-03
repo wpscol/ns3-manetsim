@@ -61,6 +61,7 @@ run_ns3:
 			--rngRun="{}" \
 			--rngSeed=$(SIM_RNG_SEED) \
 			--nodesNum=$(SIM_NODES_NUM) \
+			--spineNodesPercent=$(SIM_SPINE_NODES_PERCENT) \
 			--areaSizeX=$(SIM_AREA_SIZE_X) \
 			--areaSizeY=$(SIM_AREA_SIZE_Y) \
 			--resultsPath="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}" \

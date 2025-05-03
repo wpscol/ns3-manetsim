@@ -32,61 +32,60 @@ args = parser.parse_args()
 # Step 3: Read the CSV file
 data = pd.read_csv(args.input_path)
 
-# Step 4: Get unique nodes
-unique_nodes = data["node"].unique()
+# Step 4: Get unique nodes and split into normal vs. spine
+unique_nodes = list(data["node"].unique())
+spine_nodes = [n for n in unique_nodes if str(n).endswith("S")]
+normal_nodes = [n for n in unique_nodes if n not in spine_nodes]
 
-# Step 5: Create the plot
+# Step 5: Define two fixed colors
+normal_color = "#8c8c8c"  # medium‑dark gray
+spine_color = "#e63946"  # vibrant red‑orange
+
+# Step 6: Create the plot
 plt.figure(figsize=(10, 6))
 
-# Step 6: Define a color map for nodes using the updated method
-colors = plt.colormaps["turbo"]
-
 # Step 7: Plot each node and draw arrows for transitions
-for idx, node in enumerate(unique_nodes):
+for node in unique_nodes:
     node_data = data[data["node"] == node]
-    x = node_data["x"]
-    y = node_data["y"]
+    x = node_data["x"].values
+    y = node_data["y"].values
 
-    # Highlight the first value of each node
-    plt.scatter(x.iloc[0], y.iloc[0], color="orange", s=100)  # Highlight first point
+    # pick the right color
+    color = spine_color if node in spine_nodes else normal_color
 
-    # Scatter plot for the rest of the node values
-    plt.scatter(x.iloc[1:], y.iloc[1:], color=colors(idx))
+    # highlight the first position more prominently
+    plt.scatter(x[0], y[0], color=color, s=100, edgecolor="k", linewidth=1.5)
 
-    # Draw arrows between states within the same node
-    for i in range(len(node_data) - 1):
-        x_start = node_data["x"].iloc[i]
-        y_start = node_data["y"].iloc[i]
-        x_end = node_data["x"].iloc[i + 1]
-        y_end = node_data["y"].iloc[i + 1]
+    # scatter the rest of the positions
+    plt.scatter(x[1:], y[1:], color=color, alpha=0.7)
 
-        # Draw the arrow
+    # connect them with arrows
+    for i in range(len(x) - 1):
         plt.arrow(
-            x_start,
-            y_start,
-            x_end - x_start,
-            y_end - y_start,
+            x[i],
+            y[i],
+            x[i + 1] - x[i],
+            y[i + 1] - y[i],
             head_width=0.2,
             head_length=0.5,
-            fc=colors(idx),
-            ec=colors(idx),
+            length_includes_head=True,
+            fc=color,
+            ec=color,
             alpha=0.5,
         )
 
 # Step 8: Customize the plot
-plt.title("General soldier movement")
+plt.title("General soldier movement (spine nodes highlighted)")
 plt.xlabel("X")
 plt.ylabel("Y")
 plt.grid(True)
 
-# plt.legend()  # Removed the legend
+# Step 9: Apply optional axis limits
+if args.x_max is not None:
+    plt.xlim(0, args.x_max)
+if args.y_max is not None:
+    plt.ylim(0, args.y_max)
 
-# Step 9: Set X and Y axis limits
-plt.xlim(0, args.x_max if args.x_max is not None else None)
-plt.ylim(0, args.y_max if args.y_max is not None else None)
-
-# Step 10: Save the plot to the specified file
-plt.savefig(args.output_path)
-
-# Optional: Close the plot to free up memory
+# Step 10: Save and close
+plt.savefig(args.output_path, dpi=300)
 plt.close()

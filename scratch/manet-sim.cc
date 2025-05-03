@@ -1,13 +1,12 @@
 #include "ns3/aodv-module.h"
 #include "ns3/applications-module.h"
 #include "ns3/core-module.h"
+#include "ns3/flow-monitor-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/mobility-module.h"
 #include "ns3/network-module.h"
 #include "ns3/wifi-module.h"
 #include <filesystem>
-// #include "ns3/netanim-module.h"
-#include "ns3/flow-monitor-module.h"
 
 using namespace ns3;
 
@@ -26,7 +25,12 @@ template <typename... Args> std::string Sprintf(const char* fmt, Args... args) {
 // Prepare fs path for the logs
 std::filesystem::path prepareResultsDir(const std::string& path);
 // Collect each node position to the log
-void collectNodesPositions(const NodeContainer& nodes);
+void collectNodesMetrics(const NodeContainer& nodes);
+// Collect final network performance
+void collectFinalStatistics();
+// Selects nodes in the center to act as servers
+NodeContainer selectCentralSpine(const NodeContainer& nodes, double percentage);
+NodeContainer selectHorizontalSpine(const NodeContainer& nodes, double percentage, double areaSizeY);
 
 //
 // VARIABLES
@@ -46,6 +50,9 @@ FlowMonitorHelper flowmon;
 uint32_t csvIterator = 0;
 std::ostringstream csvOutput;
 
+// States
+static std::vector<bool> g_isSpineNode;
+
 NS_LOG_COMPONENT_DEFINE("MANETSim");
 
 int main(int argc, char* argv[]) {
@@ -57,15 +64,18 @@ int main(int argc, char* argv[]) {
   uint32_t rngRun = 1;
 
   // simulation region
-  uint32_t nodesNum = 5;
+  uint32_t nodesNum = 20;
+  uint32_t spineNodesPercentage = 20;
+  std::string spineVariant = "horizontal";
   float areaSizeX = 5.0;
   float areaSizeY = areaSizeX;
 
   // mobility configuration
   float minSpeed = 1.0;
-  float maxSpeed = 5.0;
-  float minPauseTime = 0.3;
-  float maxPauseTime = 0.9;
+  float maxSpeed = 3.0;
+
+  // // propagation loss
+  // std::string propagationLossModel = "nakagami";
 
   // Commandline parameters
   CommandLine cmd;
@@ -74,6 +84,8 @@ int main(int argc, char* argv[]) {
   cmd.AddValue("maxSpeed", "Maximum speed value for random mobility (m/s)", maxSpeed);
   cmd.AddValue("minSpeed", "Minimum speed value for random mobility (m/s)", minSpeed);
   cmd.AddValue("nodesNum", "Number of nodes in the simulation", nodesNum);
+  cmd.AddValue("spineNodesPercent", "Percentage of nodes working as servers (%)", spineNodesPercentage);
+  cmd.AddValue("spineVariant", "Percentage of nodes working as servers (centroid,horizontal)", spineVariant);
   cmd.AddValue("resultsPath", "Path to store the simulation results", resultsPathString);
   cmd.AddValue("rngRun", "Number of the run", rngRun);
   cmd.AddValue("rngSeed", "Seed used for the simulation", rngSeed);
@@ -88,6 +100,7 @@ int main(int argc, char* argv[]) {
   // Print configuration
   NS_LOG_INFO("MANET Simulation configuration:");
   NS_LOG_INFO("> nodesNum: " << nodesNum);
+  NS_LOG_INFO("> spineNodePercent: " << spineNodesPercentage);
   NS_LOG_INFO("> areaSize: X=" << areaSizeX << " Y=" << areaSizeY);
   NS_LOG_INFO("> maxSpeed: " << maxSpeed);
   NS_LOG_INFO("> minSpeed: " << minSpeed);
@@ -118,37 +131,57 @@ int main(int argc, char* argv[]) {
   MobilityHelper mobility;
   mobility.SetPositionAllocator(positionAllocator);
 
-  mobility.SetMobilityModel("ns3::RandomWalk2dMobilityModel", "Mode", StringValue("Distance"), "Distance",
-                            DoubleValue(3.0), "Bounds", RectangleValue(Rectangle(0.0, areaSizeX, 0.0, areaSizeY)),
-                            "Speed", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=3.0]"), "Direction",
-                            StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"), "Time",
-                            TimeValue(Seconds(1.0))); // direction change every 1 second
+  // Configure nodes movement
+  mobility.SetMobilityModel(
+      "ns3::RandomWalk2dMobilityModel", "Mode", StringValue("Distance"), "Distance", DoubleValue(2.5), "Bounds",
+      RectangleValue(Rectangle(0.0, areaSizeX, 0.0, areaSizeY)), "Speed",
+      StringValue(Sprintf("ns3::UniformRandomVariable[Min=%.2f|Max=%.2f]", minSpeed, maxSpeed)), "Direction",
+      StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"), "Time", TimeValue(Seconds(1.0)));
   mobility.Install(nodes);
+
+  // Promote percentage of central nodes to the spine
+  if (spineNodesPercentage > 100 || spineNodesPercentage < 0) {
+    NS_LOG_ERROR("Percentage value for spine nodes is incorrect: `" << spineNodesPercentage << "`");
+    return 1;
+  }
+
+  // Mark spine nodes with global flag
+  NodeContainer spine;
+  if (spineVariant == "horizontal") {
+    spine = selectHorizontalSpine(nodes, spineNodesPercentage / 100.0, areaSizeY);
+
+  } else if (spineVariant == "centroid") {
+    spine = selectCentralSpine(nodes, spineNodesPercentage / 100.0);
+  }
+
+  g_isSpineNode.assign(nodesNum, false);
+  for (uint32_t i = 0; i < spine.GetN(); i++) {
+    uint32_t id = spine.Get(i)->GetId();
+    g_isSpineNode[id] = true;
+  }
 
   // Collect position every sammplingFreq time
   csvOutput << "id,time,node,x,y,z,speed" << std::endl;
-  Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectNodesPositions, nodes);
+  Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectNodesMetrics, nodes);
 
   // Physical layer configuration
   YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();
   Ptr<YansWifiChannel> channel = wifiChannel.Create();
   YansWifiPhyHelper wifiPhy;
 
-  // Loss configuation // TODO: Check here
   wifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
   wifiChannel.AddPropagationLoss("ns3::TwoRayGroundPropagationLossModel");
 
   wifiPhy.SetChannel(channel);
 
   // WiFi channel configuration
-  // Signal manipulation
-  wifiPhy.Set("TxPowerStart", DoubleValue(20.0));
-  wifiPhy.Set("TxPowerEnd", DoubleValue(20.0));
-  wifiPhy.Set("TxPowerLevels", UintegerValue(1));
-  wifiPhy.Set("TxGain", DoubleValue(0));
-  wifiPhy.Set("RxGain", DoubleValue(0));
-  wifiPhy.Set("RxNoiseFigure", DoubleValue(7));
-  wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
+  // wifiPhy.Set("TxPowerStart", DoubleValue(20.0));
+  // wifiPhy.Set("TxPowerEnd", DoubleValue(20.0));
+  // wifiPhy.Set("TxPowerLevels", UintegerValue(1));
+  // wifiPhy.Set("TxGain", DoubleValue(0));
+  // wifiPhy.Set("RxGain", DoubleValue(0));
+  // wifiPhy.Set("RxNoiseFigure", DoubleValue(7));
+  // wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
 
   // adhoc mac configuration
   WifiMacHelper wifiMac;
@@ -156,8 +189,8 @@ int main(int argc, char* argv[]) {
 
   // wifi 802.11b
   WifiHelper wifi;
-  wifi.SetStandard(WIFI_STANDARD_80211b);
-  wifi.SetRemoteStationManager("ns3::MinstrelWifiManager"); // Linux one
+  wifi.SetStandard(WIFI_STANDARD_80211ax);
+  // wifi.SetRemoteStationManager("ns3::MinstrelWifiManager");
 
   // wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
   //                             "DataMode", StringValue("DsssRate11Mbps"),
@@ -224,11 +257,11 @@ int main(int argc, char* argv[]) {
   //     // anim.SetConstantPosition(nodes.Get(1), 20, 20);
   // }
 
-  // Configure flow monitor
-  flowmon.InstallAll();
-
   // Start simulation
   Simulator::Stop(Seconds(warmupTime + simulationTime));
+
+  // Configure flow monitor
+  flowmon.InstallAll();
 
   // Collect time
   auto start = std::chrono::high_resolution_clock::now();
@@ -253,6 +286,8 @@ int main(int argc, char* argv[]) {
   outputFile << csvOutput.str();
   NS_LOG_INFO("Results saved to: " << targetPath);
 
+  collectFinalStatistics();
+
   return 0;
 }
 
@@ -265,18 +300,114 @@ std::filesystem::path prepareResultsDir(const std::string& path) {
   return base;
 }
 
-// Get position of the nodes in specified time
-void collectNodesPositions(const NodeContainer& nodes) {
+// Get data of the nodes in specified point in time
+void collectNodesMetrics(const NodeContainer& nodes) {
   for (uint32_t i = 0; i < nodes.GetN(); i++) {
+    // Spacial data collection
     Ptr<MobilityModel> mob = nodes.Get(i)->GetObject<MobilityModel>();
     Vector pos = mob->GetPosition();
     Vector vel = mob->GetVelocity();
     double speed = std::sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
 
     Time simNowTime = Simulator::Now();
-    csvOutput << csvIterator++ << ',' << simNowTime.GetSeconds() << ',' << i << ',' << pos.x << ',' << pos.y << ','
-              << pos.z << ',' << speed << std::endl;
+
+    // Network performance collection
+
+    // Mark as spine if it is
+    std::string node_name = std::to_string(i);
+    Ptr<Node> n = nodes.Get(i);
+    uint32_t id = n->GetId();
+    if (g_isSpineNode[id]) {
+      node_name += "S";
+    }
+    csvOutput << csvIterator++ << ',' << simNowTime.GetSeconds() << ',' << node_name << ',' << pos.x << ',' << pos.y
+              << ',' << pos.z << ',' << speed << std::endl;
   }
 
-  Simulator::Schedule(Seconds(samplingFreq), &collectNodesPositions, nodes);
+  Simulator::Schedule(Seconds(samplingFreq), &collectNodesMetrics, nodes);
+}
+
+// Centroid variant
+NodeContainer selectCentralSpine(const NodeContainer& nodes, double percentage) {
+  const uint32_t N = nodes.GetN();
+  const uint32_t spineCount = std::max<uint32_t>(1, static_cast<uint32_t>(std::round(percentage * N)));
+
+  // compute centroid
+  double sumX = 0., sumY = 0.;
+  std::vector<Vector> positions(N);
+  for (uint32_t i = 0; i < N; ++i) {
+    auto mob = nodes.Get(i)->GetObject<MobilityModel>();
+    positions[i] = mob->GetPosition();
+    sumX += positions[i].x;
+    sumY += positions[i].y;
+  }
+  const double cx = sumX / N;
+  const double cy = sumY / N;
+
+  // distance of each node to centroid
+  std::vector<std::pair<double, uint32_t>> dists;
+  dists.reserve(N);
+  for (uint32_t i = 0; i < N; ++i) {
+    double dx = positions[i].x - cx;
+    double dy = positions[i].y - cy;
+    dists.emplace_back(dx * dx + dy * dy, i);
+  }
+
+  // sort ascending, take first spineCount
+  std::sort(dists.begin(), dists.end(), [](auto& a, auto& b) { return a.first < b.first; });
+
+  NodeContainer spine;
+  for (uint32_t i = 0; i < spineCount; ++i) {
+    spine.Add(nodes.Get(dists[i].second));
+  }
+  return spine;
+}
+
+// Y axis center variant
+NodeContainer selectHorizontalSpine(const NodeContainer& nodes, double percentage, double areaSizeY) {
+  const uint32_t N = nodes.GetN();
+  const uint32_t spineCount = std::max<uint32_t>(1u, static_cast<uint32_t>(std::round(percentage * N)));
+
+  // Compute the target y‑line
+  const double centerY = areaSizeY * 0.5;
+
+  // Build a vector of (verticalDistance, nodeIndex)
+  std::vector<std::pair<double, uint32_t>> dists;
+  dists.reserve(N);
+  for (uint32_t i = 0; i < N; ++i) {
+    Vector pos = nodes.Get(i)->GetObject<MobilityModel>()->GetPosition();
+    double dy = std::abs(pos.y - centerY);
+    dists.emplace_back(dy, i);
+  }
+
+  // Sort by ascending vertical distance
+  std::sort(dists.begin(), dists.end(), [](auto& a, auto& b) { return a.first < b.first; });
+
+  // Pick the first spineCount nodes
+  NodeContainer spine;
+  for (uint32_t i = 0; i < spineCount; ++i) {
+    spine.Add(nodes.Get(dists[i].second));
+  }
+  return spine;
+}
+
+// Calculate final network performance
+void collectFinalStatistics() {
+  // Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(flowmon.GetClassifier());
+  // std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats();
+
+  // for (std::map<FlowId, FlowMonitor::FlowStats>::const_iterator i = stats.begin(); i != stats.end(); ++i) {
+  //   Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow(i->first);
+
+  //   NS_LOG_INFO("Flow " << i->first << " (" << t.sourceAddress << " -> " << t.destinationAddress << ")");
+  //   NS_LOG_INFO("  Tx Bytes:   " << i->second.txBytes);
+  //   NS_LOG_INFO("  Rx Bytes:   " << i->second.rxBytes);
+  //   NS_LOG_INFO(
+  //       "  Throughput: " << i->second.rxBytes * 8.0 /
+  //                               (i->second.timeLastRxPacket.GetSeconds() - i->second.timeFirstTxPacket.GetSeconds())
+  //                               / 1024 / 1024
+  //                        << " Mbps");
+  //   NS_LOG_INFO("  End to End Delay: " << i->second.delaySum.GetSeconds() / i->second.txPackets);
+  //   NS_LOG_INFO("  Packet Delivery Ratio: " << ((i->second.rxPackets * 100) / i->second.txPackets) << "%");
+  // }
 }
