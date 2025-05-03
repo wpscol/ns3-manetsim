@@ -52,6 +52,10 @@ int main(int argc, char* argv[]) {
   // Components logging
   LogComponentEnable("MANETSim", LOG_LEVEL_INFO);
 
+  // Rng configuration
+  uint32_t rngSeed = 1;
+  uint32_t rngRun = 1;
+
   // simulation region
   uint32_t nodesNum = 5;
   float areaSizeX = 5.0;
@@ -69,6 +73,8 @@ int main(int argc, char* argv[]) {
   cmd.AddValue("minSpeed", "Minimum speed value for random mobility (m/s)", minSpeed);
   cmd.AddValue("nodesNum", "Number of nodes in the simulation", nodesNum);
   cmd.AddValue("resultsPath", "Path to store the simulation results", resultsPathString);
+  cmd.AddValue("rngRun", "Number of the run", rngRun);
+  cmd.AddValue("rngSeed", "Seed used for the simulation", rngSeed);
   cmd.AddValue("samplingFreq", "How often should measurements be taken (s)", samplingFreq);
   cmd.AddValue("simulationTime", "Duration of the simulation run (s)", simulationTime);
   cmd.AddValue("warmupTime", "Warm-up time before collecting data (s)", warmupTime);
@@ -86,10 +92,16 @@ int main(int argc, char* argv[]) {
   NS_LOG_INFO("> simulationTime: " << simulationTime);
   NS_LOG_INFO("> warmupTime: " << warmupTime);
   NS_LOG_INFO("> samplingFreq: " << samplingFreq);
+  NS_LOG_INFO("> seed: " << rngSeed);
+  NS_LOG_INFO("> rngRun: " << rngRun);
   NS_LOG_INFO("> resultsPath: " << resultsPath);
 
   // cmd.AddValue ("netanim", "Enable NetAnim", bNetAnim);
   // cmd.AddValue ("hiddenSsid", "Hide SSID in simulation", bHiddenSSID); // TODO
+
+  // Set seed and run number
+  RngSeedManager::SetSeed(rngSeed);
+  RngSeedManager::SetRun(rngRun);
 
   // Node creation
   NodeContainer nodes;
@@ -246,7 +258,6 @@ int main(int argc, char* argv[]) {
 std::filesystem::path prepareResultsDir(const std::string& path) {
   std::filesystem::path base(path);
   std::filesystem::create_directories(base);
-
   return base;
 }
 

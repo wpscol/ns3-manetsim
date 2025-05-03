@@ -8,9 +8,14 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ca-certificates build-essential \
     git curl wget gnupg2 openssl openssh-client parallel \
+    locales \
     nano vim \
     sudo \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN update-locale LANG=en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 ARG USERNAME=vscode
 ARG PUID=1000
@@ -20,7 +25,10 @@ RUN id "${USERNAME}" &> /dev/null && userdel -r app || true \
     && awk -F: '($3 == 1000) {print $1}' /etc/group | xargs -r groupdel \
     # Create user
     && groupadd -g ${PGID} ${USERNAME} \
-    && useradd -m -s /bin/bash -u ${PUID} -g ${PGID} ${USERNAME}
+    && useradd -m -s /bin/bash -u ${PUID} -g ${PGID} ${USERNAME} \
+    && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} \
+    && chmod 0440 "/etc/sudoers.d/${USERNAME}"
+
 
 USER ${USERNAME}
 WORKDIR /workspace
