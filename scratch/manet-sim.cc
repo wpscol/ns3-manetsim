@@ -36,7 +36,7 @@ float samplingFreq = 1.0;
 float simulationTime = 10.0;
 float warmupTime = 3.0;
 bool bPcapEnable = false;
-std::string resultsPathString = "./results";
+std::string resultsPathString = "./output";
 
 // Flow monitor
 Ptr<FlowMonitor> monitor;
@@ -63,15 +63,15 @@ int main(int argc, char* argv[]) {
 
   // Commandline parameters
   CommandLine cmd;
-  cmd.AddValue("nodesNum", "Number of nodes in the simulation", nodesNum);
-  cmd.AddValue("areaSizeX", "X axis of the simulation area (m)", areaSizeX);
-  cmd.AddValue("areaSizeY", "Y axis of the simulation area (m)", areaSizeY);
-  cmd.AddValue("minSpeed", "Minimum speed value for random mobility (m/s)", minSpeed);
+  cmd.AddValue("areaSizeX", "X axis size of the simulation area (m)", areaSizeX);
+  cmd.AddValue("areaSizeY", "Y axis size of the simulation area (m)", areaSizeY);
   cmd.AddValue("maxSpeed", "Maximum speed value for random mobility (m/s)", maxSpeed);
-  cmd.AddValue("samplingFreq", "How often should messurements be taken (s)", samplingFreq);
-  cmd.AddValue("simulationTime", "How long should simulation run (s)", simulationTime);
-  cmd.AddValue("warmupTime", "How long should simulation wait before collecting data (s)", warmupTime);
-  cmd.AddValue("resultsPath", "Path with results", resultsPathString);
+  cmd.AddValue("minSpeed", "Minimum speed value for random mobility (m/s)", minSpeed);
+  cmd.AddValue("nodesNum", "Number of nodes in the simulation", nodesNum);
+  cmd.AddValue("resultsPath", "Path to store the simulation results", resultsPathString);
+  cmd.AddValue("samplingFreq", "How often should measurements be taken (s)", samplingFreq);
+  cmd.AddValue("simulationTime", "Duration of the simulation run (s)", simulationTime);
+  cmd.AddValue("warmupTime", "Warm-up time before collecting data (s)", warmupTime);
   cmd.Parse(argc, argv);
 
   // Prepare results directory and path
@@ -81,9 +81,11 @@ int main(int argc, char* argv[]) {
   NS_LOG_INFO("MANET Simulation configuration:");
   NS_LOG_INFO("> nodesNum: " << nodesNum);
   NS_LOG_INFO("> areaSize: X=" << areaSizeX << " Y=" << areaSizeY);
-  NS_LOG_INFO("> mobilitySpeed: " << minSpeed << "-" << maxSpeed);
+  NS_LOG_INFO("> maxSpeed: " << maxSpeed);
+  NS_LOG_INFO("> minSpeed: " << minSpeed);
   NS_LOG_INFO("> simulationTime: " << simulationTime);
   NS_LOG_INFO("> warmupTime: " << warmupTime);
+  NS_LOG_INFO("> samplingFreq: " << samplingFreq);
   NS_LOG_INFO("> resultsPath: " << resultsPath);
 
   // cmd.AddValue ("netanim", "Enable NetAnim", bNetAnim);
@@ -118,7 +120,7 @@ int main(int argc, char* argv[]) {
 
   // Loss configuation // TODO: Check here
   wifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
-  // wifiChannel.AddPropagationLoss ("ns3::TwoRayGroundPropagationLossModel");
+  wifiChannel.AddPropagationLoss("ns3::TwoRayGroundPropagationLossModel");
 
   wifiPhy.SetChannel(channel);
 

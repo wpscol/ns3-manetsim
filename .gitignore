@@ -1,5 +1,6 @@
 /ns-allinone-3.44/**/*
-/results/**/*
+/output/**/*
 .env
 .env*
 !.env.example
+.venv
