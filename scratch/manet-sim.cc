@@ -36,9 +36,9 @@ NodeContainer selectHorizontalSpine(const NodeContainer& nodes, double percentag
 // VARIABLES
 //
 // configuration
-float samplingFreq = 1.0;
-float simulationTime = 10.0;
-float warmupTime = 3.0;
+double samplingFreq = 1.0;
+double simulationTime = 10.0;
+double warmupTime = 3.0;
 bool bPcapEnable = false;
 std::string resultsPathString = "./output";
 
@@ -67,12 +67,12 @@ int main(int argc, char* argv[]) {
   uint32_t nodesNum = 20;
   uint32_t spineNodesPercentage = 20;
   std::string spineVariant = "horizontal";
-  float areaSizeX = 5.0;
-  float areaSizeY = areaSizeX;
+  double areaSizeX = 5.0;
+  double areaSizeY = areaSizeX;
 
   // mobility configuration
-  float minSpeed = 1.0;
-  float maxSpeed = 3.0;
+  double minSpeed = 1.0;
+  double maxSpeed = 3.0;
 
   // // propagation loss
   // std::string propagationLossModel = "nakagami";
@@ -328,7 +328,7 @@ void collectNodesMetrics(const NodeContainer& nodes) {
 }
 
 // Centroid variant
-NodeContainer selectCentralSpine(const NodeContainer& nodes, double percentage) {
+NodeContainer selectCentralSpine(const NodeContainer& nodes, double percentage, double areaSizeX, double areaSizeY) {
   const uint32_t N = nodes.GetN();
   const uint32_t spineCount = std::max<uint32_t>(1, static_cast<uint32_t>(std::round(percentage * N)));
 
