@@ -29,12 +29,15 @@ void collectNodesMetrics(const NodeContainer& nodes);
 // Collect final network performance
 void collectFinalStatistics();
 // Selects nodes in the center to act as servers
-NodeContainer selectCentralSpine(const NodeContainer& nodes, double percentage);
+NodeContainer selectCentralSpine(const NodeContainer& nodes, double percentage, double areaSizeX, double areaSizeY);
 NodeContainer selectHorizontalSpine(const NodeContainer& nodes, double percentage, double areaSizeY);
 
 //
 // VARIABLES
 //
+// consts
+const uint32_t sinkPort = 8080;
+
 // configuration
 double samplingFreq = 1.0;
 double simulationTime = 10.0;
@@ -74,6 +77,10 @@ int main(int argc, char* argv[]) {
   double minSpeed = 1.0;
   double maxSpeed = 3.0;
 
+  // app configuration
+  uint32_t packetsPerSecond = 10;
+  uint32_t packetsSize = 512;
+
   // // propagation loss
   // std::string propagationLossModel = "nakagami";
 
@@ -86,6 +93,8 @@ int main(int argc, char* argv[]) {
   cmd.AddValue("nodesNum", "Number of nodes in the simulation", nodesNum);
   cmd.AddValue("spineNodesPercent", "Percentage of nodes working as servers (%)", spineNodesPercentage);
   cmd.AddValue("spineVariant", "Percentage of nodes working as servers (centroid,horizontal)", spineVariant);
+  cmd.AddValue("packetsPerSecond", "Number of packets sent every second from nodes to each spine", packetsPerSecond);
+  cmd.AddValue("packetsSize", "Size of the sent packets", packetsSize);
   cmd.AddValue("resultsPath", "Path to store the simulation results", resultsPathString);
   cmd.AddValue("rngRun", "Number of the run", rngRun);
   cmd.AddValue("rngSeed", "Seed used for the simulation", rngSeed);
@@ -101,6 +110,9 @@ int main(int argc, char* argv[]) {
   NS_LOG_INFO("MANET Simulation configuration:");
   NS_LOG_INFO("> nodesNum: " << nodesNum);
   NS_LOG_INFO("> spineNodePercent: " << spineNodesPercentage);
+  NS_LOG_INFO("> spineVariant: " << spineVariant);
+  NS_LOG_INFO("> packetsPerSecond: " << packetsPerSecond);
+  NS_LOG_INFO("> packetsSize: " << packetsSize);
   NS_LOG_INFO("> areaSize: X=" << areaSizeX << " Y=" << areaSizeY);
   NS_LOG_INFO("> maxSpeed: " << maxSpeed);
   NS_LOG_INFO("> minSpeed: " << minSpeed);
@@ -145,22 +157,27 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // Mark spine nodes with global flag
+  // Promote nodes to spine
   NodeContainer spine;
   if (spineVariant == "horizontal") {
     spine = selectHorizontalSpine(nodes, spineNodesPercentage / 100.0, areaSizeY);
 
   } else if (spineVariant == "centroid") {
-    spine = selectCentralSpine(nodes, spineNodesPercentage / 100.0);
+    spine = selectCentralSpine(nodes, spineNodesPercentage / 100.0, areaSizeX, areaSizeY);
+
+  } else {
+    NS_LOG_WARN("Chosen wrong spine variant: " << spineVariant << "(horizontal,centroid). Defaulting to horizontal.");
+    spine = selectHorizontalSpine(nodes, spineNodesPercentage / 100.0, areaSizeY);
   }
 
+  // Mark spine nodes with global flag
   g_isSpineNode.assign(nodesNum, false);
   for (uint32_t i = 0; i < spine.GetN(); i++) {
     uint32_t id = spine.Get(i)->GetId();
     g_isSpineNode[id] = true;
   }
 
-  // Collect position every sammplingFreq time
+  // Collect data every sammplingFreq time
   csvOutput << "id,time,node,x,y,z,speed" << std::endl;
   Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectNodesMetrics, nodes);
 
@@ -169,11 +186,12 @@ int main(int argc, char* argv[]) {
   Ptr<YansWifiChannel> channel = wifiChannel.Create();
   YansWifiPhyHelper wifiPhy;
 
+  // TODO: To be corrected (and blessed with buildings)
   wifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
   wifiChannel.AddPropagationLoss("ns3::TwoRayGroundPropagationLossModel");
-
   wifiPhy.SetChannel(channel);
 
+  // TODO: If hiding from enemy will be tested
   // WiFi channel configuration
   // wifiPhy.Set("TxPowerStart", DoubleValue(20.0));
   // wifiPhy.Set("TxPowerEnd", DoubleValue(20.0));
@@ -221,33 +239,48 @@ int main(int argc, char* argv[]) {
   // flow monitor
   monitor = flowmon.InstallAll();
 
-  // // Install server on all nodes
-  // for (uint32_t i = 0; i < nodesNum; ++i) {
-  //   UdpEchoServerHelper echoServer(9); // same port for all
-  //   ApplicationContainer serverApps = echoServer.Install(nodes.Get(i));
-  //   serverApps.Start(Seconds(1.0));
-  //   serverApps.Stop(Seconds(10.0));
-  // }
+  // Install packet sink server on the spine nodes
+  PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), sinkPort));
+  ApplicationContainer sinkApps = sinkHelper.Install(spine);
 
-  // // Install clients on all nodes (each node sends to the next one)
-  // for (uint32_t i = 0; i < nodesNum; ++i) {
-  //   uint32_t dest = (i + 1) % nodesNum; // circular
-  //   UdpEchoClientHelper echoClient(interfaces.GetAddress(dest), 9);
-  //   echoClient.SetAttribute("MaxPackets", UintegerValue(5));
-  //   echoClient.SetAttribute("Interval", TimeValue(Seconds(1.0)));
-  //   echoClient.SetAttribute("PacketSize", UintegerValue(512));
+  // Start server after warmup period
+  sinkApps.Start(Seconds(warmupTime));
+  sinkApps.Stop(Seconds(warmupTime + simulationTime));
 
-  //   ApplicationContainer clientApps = echoClient.Install(nodes.Get(i));
-  //   clientApps.Start(Seconds(2.0));
-  //   clientApps.Stop(Seconds(10.0));
-  // }
+  // client data rate
+  std::ostringstream dataRateStr;
+  dataRateStr << (packetsPerSecond * packetsSize * spine.GetN()) * 8 << "bps";
 
-  // PCAP capture
-  if (bPcapEnable) {
-    wifiPhy.SetPcapDataLinkType(WifiPhyHelper::DLT_IEEE802_11_RADIO);
-    wifiPhy.EnablePcap("adhoc-simulation", devices);
-    // TODO: Add per devices enable
+  // Configure clients sending packets
+  OnOffHelper clientHelper("ns3::UdpSocketFactory", Address());
+  clientHelper.SetAttribute("PacketSize", UintegerValue(packetsSize));
+  clientHelper.SetAttribute("DataRate", StringValue(dataRateStr.str()));
+  clientHelper.SetAttribute("StartTime", TimeValue(Seconds(warmupTime + 0.2)));
+  clientHelper.SetAttribute("StopTime", TimeValue(Seconds(warmupTime + simulationTime)));
+
+  // Install client apps
+  for (uint32_t i = 0; i < nodes.GetN(); i++) {
+    // If spine, continue
+    Ptr<Node> n = nodes.Get(i);
+    if (g_isSpineNode[n->GetId()]) {
+      continue;
+    }
+
+    // Install sender application to each spine node
+    for (uint32_t i = 0; i < spine.GetN(); i++) {
+      Ipv4Address spineAddr = interfaces.GetAddress(spine.Get(i)->GetId());
+      AddressValue remoteAddr(InetSocketAddress(spineAddr, sinkPort));
+      clientHelper.SetAttribute("Remote", remoteAddr);
+      clientHelper.Install(n);
+    }
   }
+
+  // // PCAP capture
+  // if (bPcapEnable) {
+  //   wifiPhy.SetPcapDataLinkType(WifiPhyHelper::DLT_IEEE802_11_RADIO);
+  //   wifiPhy.EnablePcap("adhoc-simulation", devices);
+  //   // TODO: Add per devices enable
+  // }
 
   // // NetAnim
   // if (bNetAnim) {
@@ -333,23 +366,16 @@ NodeContainer selectCentralSpine(const NodeContainer& nodes, double percentage, 
   const uint32_t spineCount = std::max<uint32_t>(1, static_cast<uint32_t>(std::round(percentage * N)));
 
   // compute centroid
-  double sumX = 0., sumY = 0.;
-  std::vector<Vector> positions(N);
-  for (uint32_t i = 0; i < N; ++i) {
-    auto mob = nodes.Get(i)->GetObject<MobilityModel>();
-    positions[i] = mob->GetPosition();
-    sumX += positions[i].x;
-    sumY += positions[i].y;
-  }
-  const double cx = sumX / N;
-  const double cy = sumY / N;
+  double cx = areaSizeX * 0.5;
+  double cy = areaSizeY * 0.5;
 
   // distance of each node to centroid
   std::vector<std::pair<double, uint32_t>> dists;
   dists.reserve(N);
   for (uint32_t i = 0; i < N; ++i) {
-    double dx = positions[i].x - cx;
-    double dy = positions[i].y - cy;
+    Vector pos = nodes.Get(i)->GetObject<MobilityModel>()->GetPosition();
+    double dx = pos.x - cx;
+    double dy = pos.y - cy;
     dists.emplace_back(dx * dx + dy * dy, i);
   }
 
