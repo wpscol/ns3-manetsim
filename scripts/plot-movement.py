@@ -54,7 +54,7 @@ for node in unique_nodes:
     color = spine_color if node in spine_nodes else normal_color
 
     # highlight the first position more prominently
-    plt.scatter(x[0], y[0], color=color, s=100, edgecolor="k", linewidth=1.5)
+    plt.scatter(x[0], y[0], color=color, s=100, edgecolor="k", linewidth=1)
 
     # scatter the rest of the positions
     plt.scatter(x[1:], y[1:], color=color, alpha=0.7)
@@ -75,7 +75,7 @@ for node in unique_nodes:
         )
 
 # Step 8: Customize the plot
-plt.title("General soldier movement (spine nodes highlighted)")
+plt.title("General nodes move map (spine nodes highlighted)")
 plt.xlabel("X")
 plt.ylabel("Y")
 plt.grid(True)
@@ -83,6 +83,7 @@ plt.grid(True)
 # Step 9: Apply optional axis limits
 if args.x_max is not None:
     plt.xlim(0, args.x_max)
+
 if args.y_max is not None:
     plt.ylim(0, args.y_max)
 

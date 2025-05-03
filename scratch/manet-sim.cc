@@ -41,7 +41,7 @@ const uint32_t sinkPort = 8080;
 // configuration
 double samplingFreq = 1.0;
 double simulationTime = 10.0;
-double warmupTime = 3.0;
+double warmupTime = 1.0;
 bool bPcapEnable = false;
 std::string resultsPathString = "./output";
 
@@ -54,7 +54,7 @@ uint32_t csvIterator = 0;
 std::ostringstream csvOutput;
 
 // States
-static std::vector<bool> g_isSpineNode;
+std::vector<bool> g_isSpineNode;
 
 NS_LOG_COMPONENT_DEFINE("MANETSim");
 
@@ -178,7 +178,7 @@ int main(int argc, char* argv[]) {
   }
 
   // Collect data every sammplingFreq time
-  csvOutput << "id,time,node,x,y,z,speed" << std::endl;
+  csvOutput << "id,time,node,x,y,z,speed,packetsReceived,packetsLost" << std::endl;
   Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectNodesMetrics, nodes);
 
   // Physical layer configuration
@@ -236,9 +236,6 @@ int main(int argc, char* argv[]) {
   ipv4.SetBase("10.0.0.0", "255.0.0.0");
   Ipv4InterfaceContainer interfaces = ipv4.Assign(devices);
 
-  // flow monitor
-  monitor = flowmon.InstallAll();
-
   // Install packet sink server on the spine nodes
   PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), sinkPort));
   ApplicationContainer sinkApps = sinkHelper.Install(spine);
@@ -290,11 +287,11 @@ int main(int argc, char* argv[]) {
   //     // anim.SetConstantPosition(nodes.Get(1), 20, 20);
   // }
 
-  // Start simulation
+  // Declare stopping time
   Simulator::Stop(Seconds(warmupTime + simulationTime));
 
   // Configure flow monitor
-  flowmon.InstallAll();
+  monitor = flowmon.InstallAll();
 
   // Collect time
   auto start = std::chrono::high_resolution_clock::now();
@@ -319,8 +316,6 @@ int main(int argc, char* argv[]) {
   outputFile << csvOutput.str();
   NS_LOG_INFO("Results saved to: " << targetPath);
 
-  collectFinalStatistics();
-
   return 0;
 }
 
@@ -344,16 +339,11 @@ void collectNodesMetrics(const NodeContainer& nodes) {
 
     Time simNowTime = Simulator::Now();
 
-    // Network performance collection
-
     // Mark as spine if it is
-    std::string node_name = std::to_string(i);
     Ptr<Node> n = nodes.Get(i);
-    uint32_t id = n->GetId();
-    if (g_isSpineNode[id]) {
-      node_name += "S";
-    }
-    csvOutput << csvIterator++ << ',' << simNowTime.GetSeconds() << ',' << node_name << ',' << pos.x << ',' << pos.y
+    std::string nodeName = std::to_string(i) + (g_isSpineNode[n->GetId()] ? "S" : "");
+
+    csvOutput << csvIterator++ << ',' << simNowTime.GetSeconds() << ',' << nodeName << ',' << pos.x << ',' << pos.y
               << ',' << pos.z << ',' << speed << std::endl;
   }
 
@@ -402,12 +392,12 @@ NodeContainer selectHorizontalSpine(const NodeContainer& nodes, double percentag
   dists.reserve(N);
   for (uint32_t i = 0; i < N; ++i) {
     Vector pos = nodes.Get(i)->GetObject<MobilityModel>()->GetPosition();
-    double dy = std::abs(pos.y - centerY);
+    double dy = (pos.y >= centerY) ? (pos.y - centerY) : (centerY - pos.y);
     dists.emplace_back(dy, i);
   }
 
   // Sort by ascending vertical distance
-  std::sort(dists.begin(), dists.end(), [](auto& a, auto& b) { return a.first < b.first; });
+  std::sort(dists.begin(), dists.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
 
   // Pick the first spineCount nodes
   NodeContainer spine;
@@ -415,25 +405,4 @@ NodeContainer selectHorizontalSpine(const NodeContainer& nodes, double percentag
     spine.Add(nodes.Get(dists[i].second));
   }
   return spine;
-}
-
-// Calculate final network performance
-void collectFinalStatistics() {
-  // Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(flowmon.GetClassifier());
-  // std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats();
-
-  // for (std::map<FlowId, FlowMonitor::FlowStats>::const_iterator i = stats.begin(); i != stats.end(); ++i) {
-  //   Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow(i->first);
-
-  //   NS_LOG_INFO("Flow " << i->first << " (" << t.sourceAddress << " -> " << t.destinationAddress << ")");
-  //   NS_LOG_INFO("  Tx Bytes:   " << i->second.txBytes);
-  //   NS_LOG_INFO("  Rx Bytes:   " << i->second.rxBytes);
-  //   NS_LOG_INFO(
-  //       "  Throughput: " << i->second.rxBytes * 8.0 /
-  //                               (i->second.timeLastRxPacket.GetSeconds() - i->second.timeFirstTxPacket.GetSeconds())
-  //                               / 1024 / 1024
-  //                        << " Mbps");
-  //   NS_LOG_INFO("  End to End Delay: " << i->second.delaySum.GetSeconds() / i->second.txPackets);
-  //   NS_LOG_INFO("  Packet Delivery Ratio: " << ((i->second.rxPackets * 100) / i->second.txPackets) << "%");
-  // }
 }
