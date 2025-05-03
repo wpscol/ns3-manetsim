@@ -39,7 +39,7 @@ unique_nodes = data["node"].unique()
 plt.figure(figsize=(10, 6))
 
 # Step 6: Define a color map for nodes using the updated method
-colors = plt.colormaps["tab10"]
+colors = plt.colormaps["turbo"]
 
 # Step 7: Plot each node and draw arrows for transitions
 for idx, node in enumerate(unique_nodes):
@@ -74,11 +74,9 @@ for idx, node in enumerate(unique_nodes):
         )
 
 # Step 8: Customize the plot
-plt.title(
-    "Scatter Plot of x vs y for All Nodes with Highlighted First Values and History"
-)
-plt.xlabel("x values")
-plt.ylabel("y values")
+plt.title("General soldier movement")
+plt.xlabel("X")
+plt.ylabel("Y")
 plt.grid(True)
 
 # plt.legend()  # Removed the legend

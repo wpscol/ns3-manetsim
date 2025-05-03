@@ -64,6 +64,8 @@ int main(int argc, char* argv[]) {
   // mobility configuration
   float minSpeed = 1.0;
   float maxSpeed = 5.0;
+  float minPauseTime = 0.3;
+  float maxPauseTime = 0.9;
 
   // Commandline parameters
   CommandLine cmd;
@@ -114,15 +116,17 @@ int main(int argc, char* argv[]) {
 
   // Mobility configuration
   MobilityHelper mobility;
-  mobility.SetMobilityModel("ns3::RandomWaypointMobilityModel", "Speed",
-                            StringValue(Sprintf("ns3::UniformRandomVariable[Min=%.2f|Max=%.2f]", minSpeed, maxSpeed)),
-                            "Pause", StringValue("ns3::ConstantRandomVariable[Constant=0.75]"), "PositionAllocator",
-                            PointerValue(positionAllocator));
   mobility.SetPositionAllocator(positionAllocator);
+
+  mobility.SetMobilityModel("ns3::RandomWalk2dMobilityModel", "Mode", StringValue("Distance"), "Distance",
+                            DoubleValue(3.0), "Bounds", RectangleValue(Rectangle(0.0, areaSizeX, 0.0, areaSizeY)),
+                            "Speed", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=3.0]"), "Direction",
+                            StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"), "Time",
+                            TimeValue(Seconds(1.0))); // direction change every 1 second
   mobility.Install(nodes);
 
   // Collect position every sammplingFreq time
-  csvOutput << "id,time,node,x,y,z" << std::endl;
+  csvOutput << "id,time,node,x,y,z,speed" << std::endl;
   Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectNodesPositions, nodes);
 
   // Physical layer configuration
@@ -266,9 +270,12 @@ void collectNodesPositions(const NodeContainer& nodes) {
   for (uint32_t i = 0; i < nodes.GetN(); i++) {
     Ptr<MobilityModel> mob = nodes.Get(i)->GetObject<MobilityModel>();
     Vector pos = mob->GetPosition();
+    Vector vel = mob->GetVelocity();
+    double speed = std::sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+
     Time simNowTime = Simulator::Now();
     csvOutput << csvIterator++ << ',' << simNowTime.GetSeconds() << ',' << i << ',' << pos.x << ',' << pos.y << ','
-              << pos.z << std::endl;
+              << pos.z << ',' << speed << std::endl;
   }
 
   Simulator::Schedule(Seconds(samplingFreq), &collectNodesPositions, nodes);
