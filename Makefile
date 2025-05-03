@@ -28,7 +28,6 @@ link:
 	ln -sfn $(shell pwd)/scratch/ $(NS3_DIR)/scratch/
 
 run:
-	mkdir -p $(RESULTS_DIR)
 	$(NS3_DIR)/$(NS3_ADHOC_SIM_BIN) \
 		--nodesNum=$(SIM_NODES_NUM) \
 		--areaSizeX=$(SIM_AREA_SIZE_X) \

@@ -243,7 +243,7 @@ int main(int argc, char* argv[]) {
 //
 std::filesystem::path prepareResultsDir(const std::string& path) {
   std::filesystem::path base(path);
-  std::filesystem::create_directory(base);
+  std::filesystem::create_directories(base);
 
   return base;
 }
