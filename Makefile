@@ -12,7 +12,7 @@ default: init
 
 init: cpenv download rmdefault link configure venv
 
-run: run_ns3 plot
+run: run_ns3 analyze
 
 build:
 	$(NS3_BIN) build $(NS3_ADHOC_SIM_SRC)
@@ -47,12 +47,16 @@ cpenv:
 link:
 	ln -sfn $(shell pwd)/scratch $(NS3_DIR)/scratch
 
-plot:
+analyze:
 	echo $(SIM_RNG_RUNS) | tr ' ' '\n' | /usr/bin/parallel \
-		$(PYTHON_BIN) ./scripts/plot-movement.py \
-			--input_path="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/movement.csv" \
-			--output_path="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/plot.png"
-
+		$(PYTHON_BIN) ./scripts/analyze_results.py \
+			--nodes=$(SIM_NODES_NUM) \
+			--packets="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/packets.csv" \
+			--movement="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/movement.csv" \
+			--connectivity="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/connectivity.csv" \
+			--plot="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/movement_plot.png" \
+			--xmax="$(SIM_AREA_SIZE_X)" \
+			--ymax="$(SIM_AREA_SIZE_Y)"
 
 run_ns3:
 	echo $(SIM_RNG_RUNS) | tr ' ' '\n' | /usr/bin/parallel \

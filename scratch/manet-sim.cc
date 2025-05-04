@@ -1,8 +1,6 @@
 // TODO:
-// - throughput
-// - delays
-// - packet to the nearest spine node == within network/online
 // - loss propagation
+// - jamming
 // - obstacles
 // - terrain
 // - more network configuration
@@ -51,6 +49,9 @@ NodeContainer selectHorizontalSpine(const NodeContainer& nodes, double percentag
 // Check for connectivity on each node
 void SniffMonitorRx(Ptr<const Packet> pkt, uint16_t channelFreqMhz, WifiTxVector txVector, MpduInfo aMpdu,
                     SignalNoiseDbm snr, uint16_t staId);
+// Collect sent and received packets
+void TxLogger(Ptr<const Packet> pkt);
+void RxLogger(Ptr<const Packet> pkt, const Address& from);
 
 //
 // VARIABLES
@@ -70,11 +71,11 @@ Ptr<FlowMonitor> monitor;
 FlowMonitorHelper flowmon;
 
 // Results
-uint32_t movementCsvOutputIterator = 0;
-std::ostringstream movementCsvOutput;
+uint32_t movementCsvOutputIterator, linkStateCsvOutputIterator = 0;
+std::ostringstream movementCsvOutput, linkStateCsvOutput;
 
-uint32_t linkStateCsvOutputIterator = 0;
-std::ostringstream linkStateCsvOutput;
+uint32_t packetsCsvIterator = 0;
+std::ostringstream packetsCsv;
 
 // States
 std::vector<bool> g_isSpineNode;
@@ -132,23 +133,6 @@ int main(int argc, char* argv[]) {
   // Prepare results directory and path
   auto resultsPath = prepareResultsDir(resultsPathString);
 
-  // Print configuration
-  NS_LOG_INFO("MANET Simulation configuration:");
-  NS_LOG_INFO("> nodesNum: " << nodesNum);
-  NS_LOG_INFO("> spineNodePercent: " << spineNodesPercentage);
-  NS_LOG_INFO("> spineVariant: " << spineVariant);
-  NS_LOG_INFO("> packetsPerSecond: " << packetsPerSecond);
-  NS_LOG_INFO("> packetsSize: " << packetsSize);
-  NS_LOG_INFO("> areaSize: X=" << areaSizeX << " Y=" << areaSizeY);
-  NS_LOG_INFO("> maxSpeed: " << maxSpeed);
-  NS_LOG_INFO("> minSpeed: " << minSpeed);
-  NS_LOG_INFO("> simulationTime: " << simulationTime);
-  NS_LOG_INFO("> warmupTime: " << warmupTime);
-  NS_LOG_INFO("> samplingFreq: " << samplingFreq);
-  NS_LOG_INFO("> seed: " << rngSeed);
-  NS_LOG_INFO("> rngRun: " << rngRun);
-  NS_LOG_INFO("> resultsPath: " << resultsPath);
-
   // cmd.AddValue ("netanim", "Enable NetAnim", bNetAnim);
   // cmd.AddValue ("hiddenSsid", "Hide SSID in simulation", bHiddenSSID); // TODO
 
@@ -202,13 +186,39 @@ int main(int argc, char* argv[]) {
     g_isSpineNode[id] = true;
   }
 
-  // Collect data every sammplingFreq time
+  // List spine nodes
+  std::ostringstream nodesList;
+  for (uint32_t i = 0; i < spine.GetN(); i++) {
+    nodesList << spine.Get(i)->GetId() << " ";
+  }
 
+  // Print configuration
+  NS_LOG_INFO("MANET Simulation configuration:");
+  NS_LOG_INFO("> nodesNum: " << nodesNum);
+  NS_LOG_INFO("> spineNodePercent: " << spineNodesPercentage);
+  NS_LOG_INFO("> spineNodeCount: " << spine.GetN());
+  NS_LOG_INFO("> spineVariant: " << spineVariant);
+  NS_LOG_INFO("> packetsPerSecond: " << packetsPerSecond);
+  NS_LOG_INFO("> packetsSize: " << packetsSize);
+  NS_LOG_INFO("> areaSize: X=" << areaSizeX << " Y=" << areaSizeY);
+  NS_LOG_INFO("> maxSpeed: " << maxSpeed);
+  NS_LOG_INFO("> minSpeed: " << minSpeed);
+  NS_LOG_INFO("> simulationTime: " << simulationTime);
+  NS_LOG_INFO("> warmupTime: " << warmupTime);
+  NS_LOG_INFO("> samplingFreq: " << samplingFreq);
+  NS_LOG_INFO("> seed: " << rngSeed);
+  NS_LOG_INFO("> rngRun: " << rngRun);
+  NS_LOG_INFO("> resultsPath: " << resultsPath);
+  NS_LOG_INFO("> spineNodeNumbers: " << nodesList.str());
+
+  // Collect data every sammplingFreq time
   movementCsvOutput << "id,time,node,x,y,z,speed" << std::endl;
   Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectMovementData, nodes);
 
   linkStateCsvOutput << "id,time,node,link" << std::endl;
   Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectConnectivityData, nodes);
+
+  packetsCsv << "id,time,node,uid,size,received" << std::endl;
 
   // Physical layer configuration
   YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();
@@ -229,9 +239,11 @@ int main(int argc, char* argv[]) {
 
   } else if (wifiType == "80211g") {
     wifi.SetStandard(WIFI_STANDARD_80211g);
+    wifiPhy.Set("ChannelSettings", StringValue("{0, 40, BAND_2.4GHZ, 0}"));
 
   } else if (wifiType == "80211ax") {
     wifi.SetStandard(WIFI_STANDARD_80211ax);
+    wifiPhy.Set("ChannelSettings", StringValue("{0, 80, BAND_5GHZ, 0}"));
 
   } else {
     NS_FATAL_ERROR("Unknown wifiType \"" << wifiType << "\"");
@@ -245,7 +257,6 @@ int main(int argc, char* argv[]) {
   // wifiPhy.Set("TxGain", DoubleValue(0));
   // wifiPhy.Set("RxGain", DoubleValue(0));
   // wifiPhy.Set("RxNoiseFigure", DoubleValue(7));
-  wifiPhy.Set("ChannelSettings", StringValue("{0, 80, BAND_5GHZ, 0}"));
   // wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
 
   // wifi.SetRemoteStationManager("ns3::MinstrelWifiManager");
@@ -277,7 +288,7 @@ int main(int argc, char* argv[]) {
   Ipv4InterfaceContainer interfaces = ipv4.Assign(devices);
 
   // Install packet sink server on the spine nodes
-  PacketSinkHelper sinkHelper("ns3::TcpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), sinkPort));
+  PacketSinkHelper sinkHelper("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), sinkPort));
   ApplicationContainer sinkApps = sinkHelper.Install(spine);
 
   // Start server after warmup period
@@ -289,28 +300,40 @@ int main(int argc, char* argv[]) {
   dataRateStr << (packetsPerSecond * packetsSize * spine.GetN()) * 8 << "bps";
 
   // Configure clients sending packets
-  OnOffHelper clientHelper("ns3::TcpSocketFactory", Address());
+  OnOffHelper clientHelper("ns3::UdpSocketFactory", Address());
   clientHelper.SetAttribute("PacketSize", UintegerValue(packetsSize));
   clientHelper.SetAttribute("DataRate", StringValue(dataRateStr.str()));
   clientHelper.SetAttribute("StartTime", TimeValue(Seconds(warmupTime + 0.2)));
   clientHelper.SetAttribute("StopTime", TimeValue(Seconds(warmupTime + simulationTime)));
 
-  // Install client apps
+  // Send packets from each node to the spine (except to itself if spine)
   for (uint32_t i = 0; i < nodes.GetN(); i++) {
-    // If spine, continue
     Ptr<Node> n = nodes.Get(i);
-    if (g_isSpineNode[n->GetId()]) {
-      continue;
-    }
+    uint32_t srcId = n->GetId();
 
-    // Install sender application to each spine node
-    for (uint32_t i = 0; i < spine.GetN(); i++) {
-      Ipv4Address spineAddr = interfaces.GetAddress(spine.Get(i)->GetId());
+    // Iterate *all* spine nodes:
+    for (uint32_t j = 0; j < spine.GetN(); j++) {
+      Ptr<Node> s = spine.Get(j);
+      uint32_t dstId = s->GetId();
+
+      // Skip if this is the same node (i.e. spine sending to itself)
+      if (srcId == dstId) {
+        continue;
+      }
+
+      // Otherwise install one OnOff client from n → this spine
+      Ipv4Address spineAddr = interfaces.GetAddress(dstId);
       AddressValue remoteAddr(InetSocketAddress(spineAddr, sinkPort));
       clientHelper.SetAttribute("Remote", remoteAddr);
       clientHelper.Install(n);
     }
   }
+
+  // Trace every transmit from *any* OnOffApplication
+  Config::ConnectWithoutContext("/NodeList/*/ApplicationList/*/$ns3::OnOffApplication/Tx", MakeCallback(&TxLogger));
+
+  // Trace every receive at *any* PacketSink
+  Config::ConnectWithoutContext("/NodeList/*/ApplicationList/*/$ns3::PacketSink/Rx", MakeCallback(&RxLogger));
 
   // // PCAP capture
   // if (bPcapEnable) {
@@ -350,7 +373,9 @@ int main(int argc, char* argv[]) {
   // Print final info
   NS_LOG_INFO("Finished in " << elapsed.count() << "!");
 
-  // save to the file
+  //
+  // Save results to the files
+  //
   std::filesystem::path movementTargetPath = resultsPath / std::filesystem::path("movement.csv");
   std::ofstream movementOutputFile(movementTargetPath);
   movementOutputFile << movementCsvOutput.str();
@@ -360,6 +385,11 @@ int main(int argc, char* argv[]) {
   std::ofstream connOutputFile(conntargetPath);
   connOutputFile << linkStateCsvOutput.str();
   NS_LOG_INFO("Connectivity results saved to: " << conntargetPath);
+
+  std::filesystem::path packetsTargetPath = resultsPath / std::filesystem::path("packets.csv");
+  std::ofstream packetsOutputFile(packetsTargetPath);
+  packetsOutputFile << packetsCsv.str();
+  NS_LOG_INFO("Packets catched saved to: " << packetsTargetPath);
 
   return 0;
 }
@@ -478,4 +508,26 @@ void SniffMonitorRx(Ptr<const Packet> pkt, uint16_t channelFreqMhz, WifiTxVector
   pkt->PeekHeader(hdr);
   Mac48Address sender = hdr.GetAddr2();
   g_neighbors[thisNode].insert(sender);
+}
+
+// sent
+void TxLogger(Ptr<const Packet> pkt) {
+  double t = Simulator::Now().GetSeconds();
+  uint32_t nodeId = Simulator::GetContext();
+  std::string nodeName = std::to_string(nodeId) + (g_isSpineNode[nodeId] ? "S" : "");
+
+  // time,node,uid,size
+  packetsCsv << packetsCsvIterator++ << "," << t << "," << nodeName << "," << pkt->GetUid() << ',' << pkt->GetSize()
+             << ',' << 0 << std::endl;
+}
+
+// received
+void RxLogger(Ptr<const Packet> pkt, const Address& from) {
+  double t = Simulator::Now().GetSeconds();
+  uint32_t nodeId = Simulator::GetContext();
+  std::string nodeName = std::to_string(nodeId) + (g_isSpineNode[nodeId] ? "S" : "");
+
+  // time,node,uid,size
+  packetsCsv << packetsCsvIterator++ << "," << t << "," << nodeName << "," << pkt->GetUid() << "," << pkt->GetSize()
+             << ',' << 1 << std::endl;
 }
