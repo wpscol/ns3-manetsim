@@ -22,7 +22,6 @@ Usage:
     [--plot output.png --xmax 50 --ymax 50]
 """
 import argparse
-import sys
 import os
 import pandas as pd
 import numpy as np
