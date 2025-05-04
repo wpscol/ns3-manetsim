@@ -67,7 +67,7 @@ run_ns3:
 			--spineNodesPercent=$(SIM_SPINE_NODES_PERCENT) \
 			--spineVariant=$(SIM_SPINE_VARIANT) \
 			--packetsPerSecond=$(SIM_PACKETS_PER_SECOND) \
-			--packetsSize=$(SIM_PACKETS_SIZE) \
+			--packetsSize=$(SIM_PACKET_SIZE) \
 			--wifiType=$(SIM_WIFI_TYPE) \
 			--areaSizeX=$(SIM_AREA_SIZE_X) \
 			--areaSizeY=$(SIM_AREA_SIZE_Y) \

@@ -1,11 +1,7 @@
 // TODO:
-// - loss propagation
-// - jamming
-// - obstacles
-// - terrain
-// - more network configuration
-// - combain scripts into all-in-one
-// - calculate more values after simulation in C++
+// - obstacles/buildings (add buildings )
+// - eavesdropping scenario (control device power)
+// - jamming scenaio (high intensity signal/jamming model)
 
 #include "ns3/aodv-module.h"
 #include "ns3/applications-module.h"
@@ -15,6 +11,7 @@
 #include "ns3/mobility-module.h"
 #include "ns3/network-module.h"
 #include "ns3/wifi-module.h"
+
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -107,9 +104,6 @@ int main(int argc, char* argv[]) {
   uint32_t packetsPerSecond = 10;
   uint32_t packetsSize = 512;
 
-  // // propagation loss
-  // std::string propagationLossModel = "nakagami";
-
   // Commandline parameters
   CommandLine cmd;
   cmd.AddValue("areaSizeX", "X axis size of the simulation area (m)", areaSizeX);
@@ -170,10 +164,8 @@ int main(int argc, char* argv[]) {
   NodeContainer spine;
   if (spineVariant == "horizontal") {
     spine = selectHorizontalSpine(nodes, spineNodesPercentage / 100.0, areaSizeY);
-
   } else if (spineVariant == "centroid") {
     spine = selectCentralSpine(nodes, spineNodesPercentage / 100.0, areaSizeX, areaSizeY);
-
   } else {
     NS_LOG_WARN("Chosen wrong spine variant: " << spineVariant << "(horizontal,centroid). Defaulting to horizontal.");
     spine = selectHorizontalSpine(nodes, spineNodesPercentage / 100.0, areaSizeY);
@@ -225,9 +217,18 @@ int main(int argc, char* argv[]) {
   Ptr<YansWifiChannel> channel = wifiChannel.Create();
   YansWifiPhyHelper wifiPhy;
 
-  // TODO: To be corrected (and blessed with buildings)
-  wifiChannel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
-  wifiChannel.AddPropagationLoss("ns3::TwoRayGroundPropagationLossModel");
+  Ptr<LogDistancePropagationLossModel> logLoss = CreateObject<LogDistancePropagationLossModel>();
+  logLoss->SetPathLossExponent(4.5); // Higher loss due to trees
+
+  Ptr<NakagamiPropagationLossModel> nakagami = CreateObject<NakagamiPropagationLossModel>();
+  nakagami->SetNext(logLoss); // Chain Nakagami to LogDistance
+
+  Ptr<ConstantSpeedPropagationDelayModel> delay = CreateObject<ConstantSpeedPropagationDelayModel>();
+
+  channel->SetPropagationDelayModel(delay);
+  channel->SetPropagationLossModel(nakagami);
+
+  // Assign the channel to the physical layer
   wifiPhy.SetChannel(channel);
 
   WifiMacHelper wifiMac;
@@ -236,15 +237,12 @@ int main(int argc, char* argv[]) {
   WifiHelper wifi;
   if (wifiType == "80211b") {
     wifi.SetStandard(WIFI_STANDARD_80211b);
-
   } else if (wifiType == "80211g") {
     wifi.SetStandard(WIFI_STANDARD_80211g);
     wifiPhy.Set("ChannelSettings", StringValue("{0, 40, BAND_2.4GHZ, 0}"));
-
   } else if (wifiType == "80211ax") {
     wifi.SetStandard(WIFI_STANDARD_80211ax);
     wifiPhy.Set("ChannelSettings", StringValue("{0, 80, BAND_5GHZ, 0}"));
-
   } else {
     NS_FATAL_ERROR("Unknown wifiType \"" << wifiType << "\"");
   }
@@ -488,7 +486,7 @@ NodeContainer selectHorizontalSpine(const NodeContainer& nodes, double percentag
   }
 
   // Sort by ascending vertical distance
-  std::sort(dists.begin(), dists.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
+  std::sort(dists.begin(), dists.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
 
   // Pick the first spineCount nodes
   NodeContainer spine;

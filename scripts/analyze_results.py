@@ -128,20 +128,20 @@ def analyze_movement(path: str):
     # distance
 
 
-def total_distance(df):
-    d = np.sqrt(
-        df["x"].diff().fillna(0) ** 2
-        + df["y"].diff().fillna(0) ** 2
-        + df["z"].diff().fillna(0) ** 2
-    )
-    print("Per-node distance traveled:")
-    dists = {
-        node: total_distance(sub.sort_values("time"))
-        for node, sub in df.groupby("node")
-    }
-    sdist = pd.Series(dists).sort_values()
-    print(sdist.to_string())
-    return d.sum()
+# def total_distance(df):
+#     d = np.sqrt(
+#         df["x"].diff().fillna(0) ** 2
+#         + df["y"].diff().fillna(0) ** 2
+#         + df["z"].diff().fillna(0) ** 2
+#     )
+#     print("Per-node distance traveled:")
+#     dists = {
+#         node: total_distance(sub.sort_values("time"))
+#         for node, sub in df.groupby("node")
+#     }
+#     sdist = pd.Series(dists).sort_values()
+#     print(sdist.to_string())
+#     return d.sum()
 
 
 def analyze_connectivity(path: str):
