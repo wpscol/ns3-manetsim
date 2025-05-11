@@ -63,15 +63,25 @@ run_ns3:
 		$(NS3_DIR)/$(NS3_ADHOC_SIM_BIN) \
 			--rngRun="{}" \
 			--rngSeed=$(SIM_RNG_SEED) \
+			--simulationTime=$(SIM_TIME) \
+			--warmupTime=$(SIM_WARMUP_TIME) \
+			--samplingFreq=$(SIM_SAMPLING_FREQ) \
 			--nodesNum=$(SIM_NODES_NUM) \
 			--spineNodesPercent=$(SIM_SPINE_NODES_PERCENT) \
 			--spineVariant=$(SIM_SPINE_VARIANT) \
-			--packetsPerSecond=$(SIM_PACKETS_PER_SECOND) \
-			--packetsSize=$(SIM_PACKET_SIZE) \
-			--wifiType=$(SIM_WIFI_TYPE) \
 			--areaSizeX=$(SIM_AREA_SIZE_X) \
 			--areaSizeY=$(SIM_AREA_SIZE_Y) \
-			--resultsPath="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}" \
-			--simulationTime=$(SIM_TIME) \
-			--warmupTime=$(SIM_WARMUP_TIME) \
-			--samplingFreq=$(SIM_SAMPLING_FREQ)
+			--packetsPerSecond=$(SIM_PACKETS_PER_SECOND) \
+			--packetsSize=$(SIM_PACKET_SIZE) \
+			--wifiChannelWidth=$(SIM_WIFI_CHANNEL_WIDTH) \
+			--environment=$(SIM_ENV_TARGET) \
+			--treeCount=$(SIM_ENV_FOREST_TREE_COUNT) \
+			--treeSize=$(SIM_ENV_FOREST_TREE_SIZE) \
+			--treeHeight=$(SIM_ENV_FOREST_TREE_HEIGHT) \
+			--buildingGridWidth=$(SIM_ENV_URBAN_GRID_WIDTH) \
+			--buildingSize=$(SIM_ENV_URBAN_GRID_SPACING) \
+			--buildingSpacing=$(SIM_ENV_URBAN_BUILDING_SIZE) \
+			--resultsPath="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}"
+
+
+

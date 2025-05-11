@@ -5,6 +5,7 @@
 
 #include "ns3/aodv-module.h"
 #include "ns3/applications-module.h"
+#include "ns3/buildings-module.h"
 #include "ns3/core-module.h"
 #include "ns3/flow-monitor-module.h"
 #include "ns3/internet-module.h"
@@ -95,14 +96,24 @@ int main(int argc, char* argv[]) {
   double areaSizeX = 5.0;
   double areaSizeY = areaSizeX;
 
+  std::string environment = "default";
+  // forest
+  uint32_t treeCount = 20;
+  double treeHeight = 5;
+  double treeSize = 0.5;
+  // urban
+  uint32_t buildingGridWidth = 3;
+  double buildingSize = 7.0;
+  double buildingSpacing = 6.0;
+
   // mobility configuration
   double minSpeed = 1.0;
   double maxSpeed = 3.0;
 
   // app configuration
-  std::string wifiType = "80211ax";
   uint32_t packetsPerSecond = 10;
   uint32_t packetsSize = 512;
+  uint32_t wifiChannelWidth = 80;
 
   // Commandline parameters
   CommandLine cmd;
@@ -115,13 +126,20 @@ int main(int argc, char* argv[]) {
   cmd.AddValue("spineVariant", "Percentage of nodes working as servers: centroid | horizontal", spineVariant);
   cmd.AddValue("packetsPerSecond", "Number of packets sent every second from nodes to each spine", packetsPerSecond);
   cmd.AddValue("packetsSize", "Size of the sent packets", packetsSize);
-  cmd.AddValue("wifiType", "Which Wi-Fi stack to use: 80211b | 80211g | 80211ax", wifiType);
+  cmd.AddValue("wifiChannelWidth", "Size of the WiFi channel: 20 | 40 | 80 | 160 (MHz)", packetsSize);
   cmd.AddValue("resultsPath", "Path to store the simulation results", resultsPathString);
   cmd.AddValue("rngRun", "Number of the run", rngRun);
   cmd.AddValue("rngSeed", "Seed used for the simulation", rngSeed);
-  cmd.AddValue("samplingFreq", "How often should measurements be taken (s)", samplingFreq);
+  cmd.AddValue("samplingFreq", "How often should measurements be taken (every X s)", samplingFreq);
   cmd.AddValue("simulationTime", "Duration of the simulation run (s)", simulationTime);
   cmd.AddValue("warmupTime", "Warm-up time before collecting data (s)", warmupTime);
+  cmd.AddValue("environment", "Choose target environment for testing: default | urban | forest", environment);
+  cmd.AddValue("treeCount", "Number of trees in simulation [forest environment only]", treeCount);
+  cmd.AddValue("treeSize", "Size of the single tree (m) [forest environment only]", treeSize);
+  cmd.AddValue("treeHeight", "Height of the single tree (m) [forest environment only]", treeHeight);
+  cmd.AddValue("buildingGridWidth", "Number of buildings per row [urban environment only]", buildingGridWidth);
+  cmd.AddValue("buildingSize", "Building side length (m) [urban environment only]", buildingSize);
+  cmd.AddValue("buildingSpacing", "buildingSpacing between buildings (m) [urban environment only]", buildingSpacing);
   cmd.Parse(argc, argv);
 
   // Prepare results directory and path
@@ -142,17 +160,25 @@ int main(int argc, char* argv[]) {
   Ptr<PositionAllocator> positionAllocator = CreateObject<RandomRectanglePositionAllocator>();
   positionAllocator->SetAttribute("X", StringValue(Sprintf("ns3::UniformRandomVariable[Min=0|Max=%.2f]", areaSizeX)));
   positionAllocator->SetAttribute("Y", StringValue(Sprintf("ns3::UniformRandomVariable[Min=0|Max=%.2f]", areaSizeY)));
+  positionAllocator->SetAttribute("Z", StringValue("1.5"));
 
   // Mobility configuration
   MobilityHelper mobility;
   mobility.SetPositionAllocator(positionAllocator);
 
   // Configure nodes movement
-  mobility.SetMobilityModel(
-      "ns3::RandomWalk2dMobilityModel", "Mode", StringValue("Distance"), "Distance", DoubleValue(2.5), "Bounds",
-      RectangleValue(Rectangle(0.0, areaSizeX, 0.0, areaSizeY)), "Speed",
-      StringValue(Sprintf("ns3::UniformRandomVariable[Min=%.2f|Max=%.2f]", minSpeed, maxSpeed)), "Direction",
-      StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"), "Time", TimeValue(Seconds(1.0)));
+  // without walls
+  // mobility.SetMobilityModel(
+  //     "ns3::RandomWalk2dMobilityModel", "Mode", StringValue("Distance"), "Distance", DoubleValue(2.5), "Bounds",
+  //     RectangleValue(Rectangle(0.0, areaSizeX, 0.0, areaSizeY)), "Speed",
+  //     StringValue(Sprintf("ns3::UniformRandomVariable[Min=%.2f|Max=%.2f]", minSpeed, maxSpeed)), "Direction",
+  //     StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"), "Time", TimeValue(Seconds(1.0)));
+  // aware of walls
+  mobility.SetMobilityModel("ns3::RandomWalk2dOutdoorMobilityModel", "Mode", StringValue("Distance"), "Distance",
+                            DoubleValue(2.5), "Bounds", RectangleValue(Rectangle(0, areaSizeX, 0, areaSizeY)), "Speed",
+                            StringValue(Sprintf("ns3::UniformRandomVariable[Min=%.2f|Max=%.2f]", minSpeed, maxSpeed)),
+                            "Direction", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"), "Time",
+                            TimeValue(Seconds(1.0)));
   mobility.Install(nodes);
 
   // Promote percentage of central nodes to the spine
@@ -202,6 +228,18 @@ int main(int argc, char* argv[]) {
   NS_LOG_INFO("> rngRun: " << rngRun);
   NS_LOG_INFO("> resultsPath: " << resultsPath);
   NS_LOG_INFO("> spineNodeNumbers: " << nodesList.str());
+  NS_LOG_INFO("> environment" << environment);
+
+  if (environment == "forest") {
+    NS_LOG_INFO("> treeCount: " << treeCount);
+    NS_LOG_INFO("> treeSize: " << treeSize);
+    NS_LOG_INFO("> treeHeight" << treeHeight);
+
+  } else if (environment == "urban") {
+    NS_LOG_INFO("> buildingGridWidth: " << buildingGridWidth);
+    NS_LOG_INFO("> buildingSize: " << buildingSize);
+    NS_LOG_INFO("> buildingSpacing" << buildingSpacing);
+  }
 
   // Collect data every sammplingFreq time
   movementCsvOutput << "id,time,node,x,y,z,speed" << std::endl;
@@ -217,35 +255,75 @@ int main(int argc, char* argv[]) {
   Ptr<YansWifiChannel> channel = wifiChannel.Create();
   YansWifiPhyHelper wifiPhy;
 
-  Ptr<LogDistancePropagationLossModel> logLoss = CreateObject<LogDistancePropagationLossModel>();
-  logLoss->SetPathLossExponent(4.5); // Higher loss due to trees
+  if (environment == "forest") {
+    // Configure propagation
+    Ptr<LogDistancePropagationLossModel> logLoss = CreateObject<LogDistancePropagationLossModel>();
+    logLoss->SetPathLossExponent(4.5);
+    Ptr<NakagamiPropagationLossModel> nakagami = CreateObject<NakagamiPropagationLossModel>();
+    nakagami->SetNext(logLoss);
+    channel->SetPropagationLossModel(nakagami);
 
-  Ptr<NakagamiPropagationLossModel> nakagami = CreateObject<NakagamiPropagationLossModel>();
-  nakagami->SetNext(logLoss); // Chain Nakagami to LogDistance
+    // Randomly place trees on in the area
+    Ptr<UniformRandomVariable> uvX = CreateObject<UniformRandomVariable>();
+    uvX->SetAttribute("Min", DoubleValue(0.0));
+    uvX->SetAttribute("Max", DoubleValue(areaSizeX));
 
-  Ptr<ConstantSpeedPropagationDelayModel> delay = CreateObject<ConstantSpeedPropagationDelayModel>();
+    Ptr<UniformRandomVariable> uvY = CreateObject<UniformRandomVariable>();
+    uvY->SetAttribute("Min", DoubleValue(0.0));
+    uvY->SetAttribute("Max", DoubleValue(areaSizeX));
 
-  channel->SetPropagationDelayModel(delay);
-  channel->SetPropagationLossModel(nakagami);
+    for (uint32_t i = 0; i < treeCount; ++i) {
+      Ptr<Building> tree = CreateObject<Building>();
+      double x = uvX->GetValue();
+      double y = uvY->GetValue();
+      tree->SetBoundaries(Box(x, x + treeSize, y, y + treeSize, 0.0, treeHeight));
+    }
 
-  // Assign the channel to the physical layer
-  wifiPhy.SetChannel(channel);
+  } else if (environment == "urban") {
+    // Configure propagation
+    Ptr<LogDistancePropagationLossModel> logLoss = CreateObject<LogDistancePropagationLossModel>();
+    logLoss->SetPathLossExponent(3.0);
+    Ptr<HybridBuildingsPropagationLossModel> buildingLoss = CreateObject<HybridBuildingsPropagationLossModel>();
+    buildingLoss->SetNext(logLoss);
+
+    channel->SetPropagationLossModel(buildingLoss);
+
+    // Configure buildings grid
+    Ptr<GridBuildingAllocator> gridAlloc = CreateObject<GridBuildingAllocator>();
+    gridAlloc->SetAttribute("GridWidth", UintegerValue(buildingGridWidth));
+    gridAlloc->SetAttribute("LengthX", DoubleValue(buildingSize));
+    gridAlloc->SetAttribute("LengthY", DoubleValue(buildingSize));
+    gridAlloc->SetAttribute("DeltaX", DoubleValue(buildingSpacing + buildingSize));
+    gridAlloc->SetAttribute("DeltaY", DoubleValue(buildingSpacing + buildingSize));
+    gridAlloc->SetAttribute("Height", DoubleValue(8.0));
+
+    gridAlloc->SetBuildingAttribute("NFloors", UintegerValue(1));
+    gridAlloc->SetBuildingAttribute("NRoomsX", UintegerValue(3));
+    gridAlloc->SetBuildingAttribute("NRoomsY", UintegerValue(3));
+    gridAlloc->SetBuildingAttribute("Type", StringValue("Residential"));
+    gridAlloc->SetBuildingAttribute("ExternalWallsType", StringValue("ConcreteWithWindows"));
+
+    gridAlloc->SetAttribute("MinX", DoubleValue(0.0));
+    gridAlloc->SetAttribute("MinY", DoubleValue(0.0));
+
+    gridAlloc->Create(buildingGridWidth * buildingGridWidth);
+
+  } else {
+    NS_LOG_INFO("Unspecified environment “" << environment << "”, using defaults");
+  }
+
+  // Install objects for all nodes
+  BuildingsHelper::Install(nodes);
 
   WifiMacHelper wifiMac;
   wifiMac.SetType("ns3::AdhocWifiMac");
 
   WifiHelper wifi;
-  if (wifiType == "80211b") {
-    wifi.SetStandard(WIFI_STANDARD_80211b);
-  } else if (wifiType == "80211g") {
-    wifi.SetStandard(WIFI_STANDARD_80211g);
-    wifiPhy.Set("ChannelSettings", StringValue("{0, 40, BAND_2.4GHZ, 0}"));
-  } else if (wifiType == "80211ax") {
-    wifi.SetStandard(WIFI_STANDARD_80211ax);
-    wifiPhy.Set("ChannelSettings", StringValue("{0, 80, BAND_5GHZ, 0}"));
-  } else {
-    NS_FATAL_ERROR("Unknown wifiType \"" << wifiType << "\"");
+  wifi.SetStandard(WIFI_STANDARD_80211ax);
+  if (wifiChannelWidth != 20 && wifiChannelWidth != 40 && wifiChannelWidth != 80 && wifiChannelWidth != 160) {
+    NS_FATAL_ERROR("Incorrect WiFi channel width: " << wifiChannelWidth);
   }
+  wifiPhy.Set("ChannelSettings", StringValue("{0, " + std::to_string(wifiChannelWidth) + ", BAND_5GHZ, 0}"));
 
   // TODO: Configure network parameters
 
