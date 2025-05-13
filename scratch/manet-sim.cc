@@ -1,5 +1,4 @@
 // TODO:
-// - obstacles/buildings (add buildings )
 // - eavesdropping scenario (control device power)
 // - jamming scenaio (high intensity signal/jamming model)
 
@@ -168,17 +167,20 @@ int main(int argc, char* argv[]) {
 
   // Configure nodes movement
   // without walls
-  // mobility.SetMobilityModel(
-  //     "ns3::RandomWalk2dMobilityModel", "Mode", StringValue("Distance"), "Distance", DoubleValue(2.5), "Bounds",
-  //     RectangleValue(Rectangle(0.0, areaSizeX, 0.0, areaSizeY)), "Speed",
-  //     StringValue(Sprintf("ns3::UniformRandomVariable[Min=%.2f|Max=%.2f]", minSpeed, maxSpeed)), "Direction",
-  //     StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"), "Time", TimeValue(Seconds(1.0)));
+  mobility.SetMobilityModel(
+      "ns3::RandomWalk2dMobilityModel", "Mode", StringValue("Distance"), "Distance", DoubleValue(2.5), "Bounds",
+      RectangleValue(Rectangle(0.0, areaSizeX, 0.0, areaSizeY)), "Speed",
+      StringValue(Sprintf("ns3::UniformRandomVariable[Min=%.2f|Max=%.2f]", minSpeed, maxSpeed)), "Direction",
+      StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"), "Time", TimeValue(Seconds(1.0)));
+
   // aware of walls
-  mobility.SetMobilityModel("ns3::RandomWalk2dOutdoorMobilityModel", "Mode", StringValue("Distance"), "Distance",
-                            DoubleValue(2.5), "Bounds", RectangleValue(Rectangle(0, areaSizeX, 0, areaSizeY)), "Speed",
-                            StringValue(Sprintf("ns3::UniformRandomVariable[Min=%.2f|Max=%.2f]", minSpeed, maxSpeed)),
-                            "Direction", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"), "Time",
-                            TimeValue(Seconds(1.0)));
+  // mobility.SetMobilityModel("ns3::RandomWalk2dOutdoorMobilityModel", "Mode", StringValue("Distance"), "Distance",
+  //                           DoubleValue(2.5), "Bounds", RectangleValue(Rectangle(0, areaSizeX, 0, areaSizeY)),
+  //                           "Speed", StringValue(Sprintf("ns3::UniformRandomVariable[Min=%.2f|Max=%.2f]", minSpeed,
+  //                           maxSpeed)), "Direction", StringValue("ns3::UniformRandomVariable[Min=0.0|Max=6.28318]"),
+  //                           "Time", TimeValue(Seconds(1.0)));
+
+  // Install mobility
   mobility.Install(nodes);
 
   // Promote percentage of central nodes to the spine
@@ -190,8 +192,10 @@ int main(int argc, char* argv[]) {
   NodeContainer spine;
   if (spineVariant == "horizontal") {
     spine = selectHorizontalSpine(nodes, spineNodesPercentage / 100.0, areaSizeY);
+
   } else if (spineVariant == "centroid") {
     spine = selectCentralSpine(nodes, spineNodesPercentage / 100.0, areaSizeX, areaSizeY);
+
   } else {
     NS_LOG_WARN("Chosen wrong spine variant: " << spineVariant << "(horizontal,centroid). Defaulting to horizontal.");
     spine = selectHorizontalSpine(nodes, spineNodesPercentage / 100.0, areaSizeY);
@@ -215,6 +219,7 @@ int main(int argc, char* argv[]) {
   NS_LOG_INFO("> nodesNum: " << nodesNum);
   NS_LOG_INFO("> spineNodePercent: " << spineNodesPercentage);
   NS_LOG_INFO("> spineNodeCount: " << spine.GetN());
+  NS_LOG_INFO("> spineNodeNumbers: " << nodesList.str());
   NS_LOG_INFO("> spineVariant: " << spineVariant);
   NS_LOG_INFO("> packetsPerSecond: " << packetsPerSecond);
   NS_LOG_INFO("> packetsSize: " << packetsSize);
@@ -227,7 +232,7 @@ int main(int argc, char* argv[]) {
   NS_LOG_INFO("> seed: " << rngSeed);
   NS_LOG_INFO("> rngRun: " << rngRun);
   NS_LOG_INFO("> resultsPath: " << resultsPath);
-  NS_LOG_INFO("> spineNodeNumbers: " << nodesList.str());
+
   NS_LOG_INFO("> environment" << environment);
 
   if (environment == "forest") {
@@ -254,6 +259,8 @@ int main(int argc, char* argv[]) {
   YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();
   Ptr<YansWifiChannel> channel = wifiChannel.Create();
   YansWifiPhyHelper wifiPhy;
+  wifiPhy.SetChannel(channel);
+  wifiPhy.SetErrorRateModel("ns3::YansErrorRateModel");
 
   if (environment == "forest") {
     // Configure propagation

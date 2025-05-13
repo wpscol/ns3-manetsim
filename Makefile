@@ -61,7 +61,7 @@ analyze:
 run_ns3:
 	echo $(SIM_RNG_RUNS) | tr ' ' '\n' | /usr/bin/parallel \
 		$(NS3_DIR)/$(NS3_ADHOC_SIM_BIN) \
-			--rngRun="{}" \
+			--rngRun={} \
 			--rngSeed=$(SIM_RNG_SEED) \
 			--simulationTime=$(SIM_TIME) \
 			--warmupTime=$(SIM_WARMUP_TIME) \
@@ -83,5 +83,7 @@ run_ns3:
 			--buildingSpacing=$(SIM_ENV_URBAN_BUILDING_SIZE) \
 			--resultsPath="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}"
 
+debug:
+		$(NS3_BIN) run --gdb $(NS3_ADHOC_SIM_SRC)
 
 
