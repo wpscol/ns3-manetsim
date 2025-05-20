@@ -1,6 +1,9 @@
 // TODO:
 // - eavesdropping scenario (control device power)
 // - jamming scenaio (high intensity signal/jamming model)
+// - OFDMA
+// - Power Control
+// - removing nodes
 
 #include "ns3/aodv-module.h"
 #include "ns3/applications-module.h"
@@ -95,15 +98,17 @@ int main(int argc, char* argv[]) {
   double areaSizeX = 5.0;
   double areaSizeY = areaSizeX;
 
-  std::string environment = "default";
+  std::string environment = "none";
+
   // forest
   uint32_t treeCount = 20;
   double treeHeight = 5;
   double treeSize = 0.5;
-  // urban
-  uint32_t buildingGridWidth = 3;
-  double buildingSize = 7.0;
-  double buildingSpacing = 6.0;
+
+  // // urban
+  // uint32_t buildingGridWidth = 3;
+  // double buildingSize = 7.0;
+  // double buildingSpacing = 6.0;
 
   // mobility configuration
   double minSpeed = 1.0;
@@ -132,13 +137,15 @@ int main(int argc, char* argv[]) {
   cmd.AddValue("samplingFreq", "How often should measurements be taken (every X s)", samplingFreq);
   cmd.AddValue("simulationTime", "Duration of the simulation run (s)", simulationTime);
   cmd.AddValue("warmupTime", "Warm-up time before collecting data (s)", warmupTime);
-  cmd.AddValue("environment", "Choose target environment for testing: default | urban | forest", environment);
+  cmd.AddValue("environment", "Choose target environment for testing: none | forest", environment);
   cmd.AddValue("treeCount", "Number of trees in simulation [forest environment only]", treeCount);
   cmd.AddValue("treeSize", "Size of the single tree (m) [forest environment only]", treeSize);
   cmd.AddValue("treeHeight", "Height of the single tree (m) [forest environment only]", treeHeight);
-  cmd.AddValue("buildingGridWidth", "Number of buildings per row [urban environment only]", buildingGridWidth);
-  cmd.AddValue("buildingSize", "Building side length (m) [urban environment only]", buildingSize);
-  cmd.AddValue("buildingSpacing", "buildingSpacing between buildings (m) [urban environment only]", buildingSpacing);
+
+  // // cmd.AddValue("buildingGridWidth", "Number of buildings per row [urban environment only]", buildingGridWidth);
+  // // cmd.AddValue("buildingSize", "Building side length (m) [urban environment only]", buildingSize);
+  // // cmd.AddValue("buildingSpacing", "buildingSpacing between buildings (m) [urban environment only]",
+  // buildingSpacing);
   cmd.Parse(argc, argv);
 
   // Prepare results directory and path
@@ -239,12 +246,13 @@ int main(int argc, char* argv[]) {
     NS_LOG_INFO("> treeCount: " << treeCount);
     NS_LOG_INFO("> treeSize: " << treeSize);
     NS_LOG_INFO("> treeHeight" << treeHeight);
-
-  } else if (environment == "urban") {
-    NS_LOG_INFO("> buildingGridWidth: " << buildingGridWidth);
-    NS_LOG_INFO("> buildingSize: " << buildingSize);
-    NS_LOG_INFO("> buildingSpacing" << buildingSpacing);
   }
+
+  // if (environment == "urban") {
+  //   NS_LOG_INFO("> buildingGridWidth: " << buildingGridWidth);
+  //   NS_LOG_INFO("> buildingSize: " << buildingSize);
+  //   NS_LOG_INFO("> buildingSpacing" << buildingSpacing);
+  // }
 
   // Collect data every sammplingFreq time
   movementCsvOutput << "id,time,node,x,y,z,speed" << std::endl;
@@ -286,38 +294,38 @@ int main(int argc, char* argv[]) {
       tree->SetBoundaries(Box(x, x + treeSize, y, y + treeSize, 0.0, treeHeight));
     }
 
-  } else if (environment == "urban") {
-    // Configure propagation
-    Ptr<LogDistancePropagationLossModel> logLoss = CreateObject<LogDistancePropagationLossModel>();
-    logLoss->SetPathLossExponent(3.0);
-    Ptr<HybridBuildingsPropagationLossModel> buildingLoss = CreateObject<HybridBuildingsPropagationLossModel>();
-    buildingLoss->SetNext(logLoss);
-
-    channel->SetPropagationLossModel(buildingLoss);
-
-    // Configure buildings grid
-    Ptr<GridBuildingAllocator> gridAlloc = CreateObject<GridBuildingAllocator>();
-    gridAlloc->SetAttribute("GridWidth", UintegerValue(buildingGridWidth));
-    gridAlloc->SetAttribute("LengthX", DoubleValue(buildingSize));
-    gridAlloc->SetAttribute("LengthY", DoubleValue(buildingSize));
-    gridAlloc->SetAttribute("DeltaX", DoubleValue(buildingSpacing + buildingSize));
-    gridAlloc->SetAttribute("DeltaY", DoubleValue(buildingSpacing + buildingSize));
-    gridAlloc->SetAttribute("Height", DoubleValue(8.0));
-
-    gridAlloc->SetBuildingAttribute("NFloors", UintegerValue(1));
-    gridAlloc->SetBuildingAttribute("NRoomsX", UintegerValue(3));
-    gridAlloc->SetBuildingAttribute("NRoomsY", UintegerValue(3));
-    gridAlloc->SetBuildingAttribute("Type", StringValue("Residential"));
-    gridAlloc->SetBuildingAttribute("ExternalWallsType", StringValue("ConcreteWithWindows"));
-
-    gridAlloc->SetAttribute("MinX", DoubleValue(0.0));
-    gridAlloc->SetAttribute("MinY", DoubleValue(0.0));
-
-    gridAlloc->Create(buildingGridWidth * buildingGridWidth);
-
   } else {
     NS_LOG_INFO("Unspecified environment “" << environment << "”, using defaults");
   }
+
+  // if (environment == "urban") {
+  //   // Configure propagation
+  //   Ptr<LogDistancePropagationLossModel> logLoss = CreateObject<LogDistancePropagationLossModel>();
+  //   logLoss->SetPathLossExponent(3.0);
+  //   Ptr<HybridBuildingsPropagationLossModel> buildingLoss = CreateObject<HybridBuildingsPropagationLossModel>();
+  //   buildingLoss->SetNext(logLoss);
+
+  //   channel->SetPropagationLossModel(buildingLoss);
+
+  //   // Configure buildings grid
+  //   Ptr<GridBuildingAllocator> gridAlloc = CreateObject<GridBuildingAllocator>();
+  //   gridAlloc->SetAttribute("GridWidth", UintegerValue(buildingGridWidth));
+  //   gridAlloc->SetAttribute("LengthX", DoubleValue(buildingSize));
+  //   gridAlloc->SetAttribute("LengthY", DoubleValue(buildingSize));
+  //   gridAlloc->SetAttribute("DeltaX", DoubleValue(buildingSpacing + buildingSize));
+  //   gridAlloc->SetAttribute("DeltaY", DoubleValue(buildingSpacing + buildingSize));
+  //   gridAlloc->SetAttribute("Height", DoubleValue(8.0));
+
+  //   gridAlloc->SetBuildingAttribute("NFloors", UintegerValue(1));
+  //   gridAlloc->SetBuildingAttribute("NRoomsX", UintegerValue(3));
+  //   gridAlloc->SetBuildingAttribute("NRoomsY", UintegerValue(3));
+  //   gridAlloc->SetBuildingAttribute("Type", StringValue("Residential"));
+  //   gridAlloc->SetBuildingAttribute("ExternalWallsType", StringValue("ConcreteWithWindows"));
+
+  //   gridAlloc->SetAttribute("MinX", DoubleValue(0.0));
+  //   gridAlloc->SetAttribute("MinY", DoubleValue(0.0));
+
+  //   gridAlloc->Create(buildingGridWidth * buildingGridWidth);
 
   // Install objects for all nodes
   BuildingsHelper::Install(nodes);

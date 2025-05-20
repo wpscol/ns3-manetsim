@@ -78,9 +78,6 @@ run_ns3:
 			--treeCount=$(SIM_ENV_FOREST_TREE_COUNT) \
 			--treeSize=$(SIM_ENV_FOREST_TREE_SIZE) \
 			--treeHeight=$(SIM_ENV_FOREST_TREE_HEIGHT) \
-			--buildingGridWidth=$(SIM_ENV_URBAN_GRID_WIDTH) \
-			--buildingSize=$(SIM_ENV_URBAN_GRID_SPACING) \
-			--buildingSpacing=$(SIM_ENV_URBAN_BUILDING_SIZE) \
 			--resultsPath="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}"
 
 debug:
