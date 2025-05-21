@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 """
-analyze_all.py
+analyze_results.py
 
 One-stop analysis for MANET simulation outputs:
   - Packet QoS metrics (PDR, delay, throughput)
   - Mobility statistics (speed, distance, bounding box)
   - Connectivity summary (online fraction)
-  - Optional movement plot
-
-Splits into key functions:
-  * analyze_packets(file, nodes)
-  * analyze_movement(file)
-  * analyze_connectivity(file)
-  * plot_movement(input_path, output_path, x_max, y_max)
+  - Optional movement plot with first-offline markers
 
 Usage:
-  python3 analyze_all.py \
+  python3 analyze_results.py \
     --packets packets.csv --nodes 10 \
     --movement movement.csv \
     --connectivity connectivity.csv \
     [--plot output.png --xmax 50 --ymax 50]
 """
+
 import argparse
 import os
 import pandas as pd
@@ -35,21 +30,21 @@ def analyze_packets(path: str, num_nodes: int):
         if col not in df.columns:
             raise ValueError(f"Missing column {col} in packets CSV")
     # normalize
-    df["received"] = (
-        pd.to_numeric(df["received"], errors="coerce").fillna(0).astype(int)
-    )
+    df["received"] = pd.to_numeric(df["received"], errors="coerce").fillna(0).astype(int)
     df_send = df[df["received"] == 0]
     df_recv = df[df["received"] == 1]
     tmin, tmax = df["time"].min(), df["time"].max()
     duration = tmax - tmin
-    # ids
+
+    # identify spine vs normal nodes
     spine_ids = sorted(df["node"][df["node"].str.endswith("S")].unique())
     if num_nodes is not None:
         normal_ids = [str(i) for i in range(num_nodes) if f"{i}S" not in spine_ids]
     else:
         normal_ids = sorted(df["node"][~df["node"].str.endswith("S")].unique())
     all_ids = normal_ids + spine_ids
-    # merge for delay
+
+    # compute delays by matching send/recv
     merged = pd.merge(
         df_send[["uid", "time", "node", "size"]],
         df_recv[["uid", "time"]],
@@ -59,7 +54,8 @@ def analyze_packets(path: str, num_nodes: int):
     )
     merged["delay"] = merged["time_recv"] - merged["time_send"]
     delivered = merged.dropna(subset=["time_recv"])
-    # compute
+
+    # per-node metrics
     records = []
     for node in all_ids:
         sent = df_send[df_send["node"] == node]
@@ -77,25 +73,16 @@ def analyze_packets(path: str, num_nodes: int):
         thr = (br * 8) / duration if duration > 0 else 0.0
         marker = "*" if node.endswith("S") else ""
         name = node[:-1] if node.endswith("S") else node
-        records.append(
-            [marker, name, ts, tr, pdr, avg_d, min_d, max_d, jitter, bs, br, thr]
-        )
+        records.append([marker, name, ts, tr, pdr, avg_d, min_d, max_d, jitter, bs, br, thr])
+
     cols = [
-        "marker",
-        "node",
-        "sent_pkts",
-        "recv_pkts",
-        "pdr",
-        "avg_delay_s",
-        "min_delay_s",
-        "max_delay_s",
-        "jitter_s",
-        "bytes_sent",
-        "bytes_recv",
-        "throughput_bps",
+        "marker", "node", "sent_pkts", "recv_pkts", "pdr",
+        "avg_delay_s", "min_delay_s", "max_delay_s", "jitter_s",
+        "bytes_sent", "bytes_recv", "throughput_bps"
     ]
     dfm = pd.DataFrame(records, columns=cols).set_index("node")
     dfm = dfm.sort_index(key=lambda idx: idx.astype(int))
+
     # summary
     print("\n=== PACKET QoS METRICS ===")
     total_sent = len(df_send)
@@ -107,7 +94,8 @@ def analyze_packets(path: str, num_nodes: int):
     print(f"Total sent: {total_sent}, delivered: {total_deliv}, PDR: {overall_pdr:.1%}")
     print(f"Avg delay: {overall_delay:.3f}s, Throughput: {overall_thr/1e6:.3f} Mbps")
     print(dfm.to_string(float_format="%.3f"))
-    # write
+
+    # write per-node CSV
     out = os.path.splitext(path)[0] + "_metrics_per_node.csv"
     dfm.to_csv(out)
     print(f"Metrics written to {out}\n")
@@ -119,97 +107,105 @@ def analyze_movement(path: str):
     tmin, tmax = df["time"].min(), df["time"].max()
     print(f"Times: {len(df['time'].unique())} points, duration {tmax-tmin:.2f}s")
     print(f"Nodes: {len(df['node'].unique())}")
-    print(
-        f"X range: {df['x'].min():.2f}-{df['x'].max():.2f}, Y range: {df['y'].min():.2f}-{df['y'].max():.2f}"
-    )
-    print(
-        f"Speed mean/std/min/max: {df['speed'].mean():.3f}/{df['speed'].std():.3f}/{df['speed'].min():.3f}/{df['speed'].max():.3f}"
-    )
-    # distance
-
-
-# def total_distance(df):
-#     d = np.sqrt(
-#         df["x"].diff().fillna(0) ** 2
-#         + df["y"].diff().fillna(0) ** 2
-#         + df["z"].diff().fillna(0) ** 2
-#     )
-#     print("Per-node distance traveled:")
-#     dists = {
-#         node: total_distance(sub.sort_values("time"))
-#         for node, sub in df.groupby("node")
-#     }
-#     sdist = pd.Series(dists).sort_values()
-#     print(sdist.to_string())
-#     return d.sum()
+    print(f"X range: {df['x'].min():.2f}-{df['x'].max():.2f}, Y range: {df['y'].min():.2f}-{df['y'].max():.2f}")
+    print(f"Speed mean/std/min/max: {df['speed'].mean():.3f}/{df['speed'].std():.3f}/{df['speed'].min():.3f}/{df['speed'].max():.3f}")
 
 
 def analyze_connectivity(path: str):
     df = pd.read_csv(path)
     print("\n=== CONNECTIVITY SUMMARY ===")
-    # Expect 'link' column indicating number of active links
     if "link" not in df.columns:
         raise RuntimeError("Expected a 'link' column for connectivity data")
-    # Consider node 'online' if link count > 0
     df["online"] = df["link"].astype(int) > 0
-
-    # Overall fraction of time nodes are online
     overall = df["online"].mean()
     print(f"Overall online fraction: {overall:.2%}")
-
-    # Per-node online fraction
     per_node = df.groupby("node")["online"].mean().sort_index()
     print("Per-node online fraction:")
     print(per_node.to_string())
 
 
-def plot_movement(input_path: str, output_path: str, x_max=None, y_max=None):
-    df = pd.read_csv(input_path)
-    unique = df["node"].unique()
-    spine = [n for n in unique if str(n).endswith("S")]
-    normal = [n for n in unique if n not in spine]
+def plot_movement(
+    movement_path: str,
+    connectivity_path: str,
+    output_path: str,
+    x_max=None,
+    y_max=None
+):
+    # load both CSVs
+    df_move = pd.read_csv(movement_path)
+    df_conn = pd.read_csv(connectivity_path)
+
+    # find first offline time per node
+    offline_times = (
+        df_conn[df_conn["online"] == False]
+        .groupby("node")["time"]
+        .min()
+        .reset_index()
+        .rename(columns={"time": "offline_time"})
+    )
+
+    unique = df_move["node"].unique()
     plt.figure(figsize=(8, 6))
-    for node in unique:
-        sub = df[df["node"] == node]
-        x, y = sub["x"], sub["y"]
-        c = "#e63946" if node in spine else "#8c8c8c"
-        plt.scatter(x.iloc[0], y.iloc[0], color=c, s=80, edgecolor="k")
-        plt.scatter(x.iloc[1:], y.iloc[1:], color=c, alpha=0.6)
+
+    for node_label in unique:
+        sub = df_move[df_move["node"] == node_label].sort_values("time")
+        x, y = sub["x"].values, sub["y"].values
+
+        # color spine vs normal
+        c = "#e63946" if str(node_label).endswith("S") else "#8c8c8c"
+
+        # draw trajectory
+        plt.scatter(x[0], y[0], color=c, s=80, edgecolor="k")
+        plt.scatter(x[1:], y[1:], color=c, alpha=0.6)
         for i in range(len(x) - 1):
             plt.arrow(
-                x.iat[i],
-                y.iat[i],
-                x.iat[i + 1] - x.iat[i],
-                y.iat[i + 1] - y.iat[i],
-                head_width=0.2,
-                head_length=0.5,
+                x[i], y[i],
+                x[i+1] - x[i], y[i+1] - y[i],
+                head_width=0.2, head_length=0.5,
                 length_includes_head=True,
-                fc=c,
-                ec=c,
-                alpha=0.5,
+                fc=c, ec=c, alpha=0.5
             )
-    plt.title("Movement Plot")
+
+        # derive numeric node ID for matching
+        try:
+            nid = int(str(node_label).rstrip("S"))
+        except ValueError:
+            continue
+
+        # check offline time
+        off = offline_times[offline_times["node"] == nid]
+        if not off.empty:
+            t_off = off["offline_time"].iloc[0]
+            nearest = sub.iloc[(sub["time"] - t_off).abs().argmin()]
+            plt.scatter(
+                nearest["x"], nearest["y"],
+                marker="x", s=80,
+                c="green", linewidths=2, zorder=5
+            )
+
+    plt.title("Movement Plot (× marks first offline)")
     plt.xlabel("X")
     plt.ylabel("Y")
     plt.grid(True)
-    if x_max:
+    if x_max is not None:
         plt.xlim(0, x_max)
-    if y_max:
+    if y_max is not None:
         plt.ylim(0, y_max)
     plt.savefig(output_path, dpi=300)
     plt.close()
 
 
 def main():
-    p = argparse.ArgumentParser(description="Unified MANET analysis")
-    p.add_argument("--packets", help="packets.csv path")
-    p.add_argument("--nodes", type=int, help="number of numeric nodes")
-    p.add_argument("--movement", help="movement.csv path")
-    p.add_argument("--connectivity", help="connectivity.csv path")
-    p.add_argument("--plot", help="output path for movement plot")
-    p.add_argument("--xmax", type=float, default=None)
-    p.add_argument("--ymax", type=float, default=None)
-    args = p.parse_args()
+    parser = argparse.ArgumentParser(description="Unified MANET analysis")
+    parser.add_argument("--packets", help="packets.csv path")
+    parser.add_argument("--nodes", type=int, help="number of numeric nodes")
+    parser.add_argument("--movement", help="movement.csv path")
+    parser.add_argument("--connectivity", help="connectivity.csv path")
+    parser.add_argument("--plot", help="output path for movement plot")
+    parser.add_argument("--xmax", type=float, default=None)
+    parser.add_argument("--ymax", type=float, default=None)
+    args = parser.parse_args()
+
     if args.packets:
         analyze_packets(args.packets, args.nodes)
     if args.movement:
@@ -217,7 +213,9 @@ def main():
     if args.connectivity:
         analyze_connectivity(args.connectivity)
     if args.plot and args.movement:
-        plot_movement(args.movement, args.plot, args.xmax, args.ymax)
+        if not args.connectivity:
+            raise RuntimeError("`--plot` requires `--connectivity` for offline markers")
+        plot_movement(args.movement, args.connectivity, args.plot, args.xmax, args.ymax)
 
 
 if __name__ == "__main__":

@@ -553,7 +553,7 @@ void collectConnectivityData(const NodeContainer& nodes) {
   Time simNowTime = Simulator::Now();
 
   for (uint32_t i = 0; i < nodes.GetN(); i++) {
-    bool linkUp = !g_neighbors[nodes.Get(i)->GetId()].empty();
+    bool linkUp = !g_neighbors[nodes.Get(i)->GetId()].empty() && g_isUp[nodes.Get(i)->GetId()];
     bool isUp = g_isUp[nodes.Get(i)->GetId()];
     linkStateCsvOutput << linkStateCsvOutputIterator++ << ',' << simNowTime.GetSeconds() << ',' << nodes.Get(i)->GetId()
                        << "," << linkUp << "," << isUp << std::endl;
@@ -662,7 +662,7 @@ void BringNodeDown(Ptr<Node> node) {
 
   Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
   ipv4->SetDown(1);
-  std::cout << Simulator::Now().GetSeconds() << "s: Node " << node->GetId() << " interface DOWN\n";
+  NS_LOG_INFO(Simulator::Now().GetSeconds() << "s: Node " << id << " interface DOWN");
 }
 
 // Start node
@@ -672,7 +672,7 @@ void BringNodeUp(Ptr<Node> node) {
 
   Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
   ipv4->SetUp(1);
-  std::cout << Simulator::Now().GetSeconds() << "s: Node " << node->GetId() << " interface UP\n";
+  NS_LOG_INFO(Simulator::Now().GetSeconds() << "s: Node " << id << " interface UP");
 }
 
 // Advance wipe line and bring nodes down when crossed
