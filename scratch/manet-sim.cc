@@ -57,6 +57,8 @@ void RxLogger(Ptr<const Packet> pkt, const Address& from);
 void BringNodeDown(Ptr<Node> node);
 void BringNodeUp(Ptr<Node> node);
 
+void wipeStep(const NodeContainer& nodes);
+
 //
 // VARIABLES
 //
@@ -86,6 +88,14 @@ std::vector<bool> g_isSpineNode;
 std::map<uint32_t, std::set<Mac48Address>> g_neighbors;
 std::vector<bool> g_isUp;
 
+std::string wipeDirection = "E";
+double wipePosX = 0.0;
+double wipePosY = 0.0;
+double wipeInit = false;
+double wipeSpeed = '1';
+double simAreaX = 0.0;
+double simAreaY = 0.0;
+
 NS_LOG_COMPONENT_DEFINE("MANETSim");
 
 int main(int argc, char* argv[]) {
@@ -104,6 +114,9 @@ int main(int argc, char* argv[]) {
   double areaSizeY = areaSizeX;
 
   std::string environment = "none";
+  std::string scenario = "none";
+
+  std::string wipeDirection = "N";
 
   // forest
   uint32_t treeCount = 20;
@@ -146,6 +159,11 @@ int main(int argc, char* argv[]) {
   cmd.AddValue("treeCount", "Number of trees in simulation [forest environment only]", treeCount);
   cmd.AddValue("treeSize", "Size of the single tree (m) [forest environment only]", treeSize);
   cmd.AddValue("treeHeight", "Height of the single tree (m) [forest environment only]", treeHeight);
+  cmd.AddValue("scenario", "Specify target simulation scenario: none | wipe", scenario);
+  cmd.AddValue("wipeDirection",
+               "Specify the direction from which to slowly stop nodes: (N)orth | (E)ast | (S)outh | (W)est | (R)andom",
+               wipeDirection);
+  cmd.AddValue("wipeSpeed", "Declare how fast should the wipe line move (m/s)", wipeSpeed);
 
   // // cmd.AddValue("buildingGridWidth", "Number of buildings per row [urban environment only]", buildingGridWidth);
   // // cmd.AddValue("buildingSize", "Building side length (m) [urban environment only]", buildingSize);
@@ -251,11 +269,16 @@ int main(int argc, char* argv[]) {
   NS_LOG_INFO("> resultsPath: " << resultsPath);
 
   NS_LOG_INFO("> environment" << environment);
-
   if (environment == "forest") {
     NS_LOG_INFO("> treeCount: " << treeCount);
     NS_LOG_INFO("> treeSize: " << treeSize);
     NS_LOG_INFO("> treeHeight" << treeHeight);
+  }
+
+  NS_LOG_INFO("> scenario" << scenario);
+  if (scenario == "wipe") {
+    NS_LOG_INFO("> wipeDirection: " << wipeDirection);
+    NS_LOG_INFO("> wipeSpeed: " << wipeSpeed);
   }
 
   // if (environment == "urban") {
@@ -263,6 +286,19 @@ int main(int argc, char* argv[]) {
   //   NS_LOG_INFO("> buildingSize: " << buildingSize);
   //   NS_LOG_INFO("> buildingSpacing" << buildingSpacing);
   // }
+
+  // Configure wipe simulation
+  if (scenario == "wipe") {
+    if (wipeDirection != "N" && wipeDirection != "E" && wipeDirection != "S" && wipeDirection != "W" &&
+        wipeDirection != "R") {
+      NS_FATAL_ERROR("Incorrect wipe direction, expeced value N,E,S,W,R, but provided: `" << wipeDirection << "`");
+    }
+
+    simAreaX = areaSizeX;
+    simAreaY = areaSizeY;
+
+    Simulator::Schedule(Seconds(warmupTime), &wipeStep, nodes);
+  }
 
   // Collect data every sammplingFreq time
   movementCsvOutput << "id,time,node,x,y,z,speed" << std::endl;
@@ -637,4 +673,66 @@ void BringNodeUp(Ptr<Node> node) {
   Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
   ipv4->SetUp(1);
   std::cout << Simulator::Now().GetSeconds() << "s: Node " << node->GetId() << " interface UP\n";
+}
+
+// Advance wipe line and bring nodes down when crossed
+void wipeStep(const NodeContainer& nodes) {
+  double t = Simulator::Now().GetSeconds();
+  // initialize wipePos on first call
+  if (!wipeInit) {
+    if (wipeDirection == "N") {
+      wipePosY = 0.0;
+    } else if (wipeDirection == "S") {
+      wipePosY = simAreaY;
+    } else if (wipeDirection == "E") {
+      wipePosX = 0.0;
+    } else if (wipeDirection == "W") {
+      wipePosX = simAreaX;
+    } else /* R */ {
+      // random cardinal
+      std::vector<std::string> dirs = {"N", "E", "S", "W"};
+      wipeDirection = dirs[std::rand() % 4];
+      wipeInit = false; // re-init next tick
+    }
+    wipeInit = true;
+  }
+
+  // move the wipe line
+  if (wipeDirection == "N") {
+    wipePosY += wipeSpeed * samplingFreq;
+  } else if (wipeDirection == "S") {
+    wipePosY -= wipeSpeed * samplingFreq;
+  } else if (wipeDirection == "E") {
+    wipePosX += wipeSpeed * samplingFreq;
+  } else if (wipeDirection == "W") {
+    wipePosX -= wipeSpeed * samplingFreq;
+  }
+
+  // check each node
+  for (uint32_t i = 0; i < nodes.GetN(); ++i) {
+    Ptr<Node> n = nodes.Get(i);
+    if (!g_isUp[n->GetId()])
+      continue; // already down
+    Ptr<MobilityModel> mob = n->GetObject<MobilityModel>();
+    Vector pos = mob->GetPosition();
+
+    bool crossed = false;
+    if (wipeDirection == "N" && pos.y <= wipePosY)
+      crossed = true;
+    if (wipeDirection == "S" && pos.y >= wipePosY)
+      crossed = true;
+    if (wipeDirection == "E" && pos.x <= wipePosX)
+      crossed = true;
+    if (wipeDirection == "W" && pos.x >= wipePosX)
+      crossed = true;
+
+    if (crossed) {
+      BringNodeDown(n);
+    }
+  }
+
+  // schedule next step until end of simulation
+  if (t < warmupTime + simulationTime) {
+    Simulator::Schedule(Seconds(samplingFreq), &wipeStep, nodes);
+  }
 }

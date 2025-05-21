@@ -78,6 +78,9 @@ run_ns3:
 			--treeCount=$(SIM_ENV_FOREST_TREE_COUNT) \
 			--treeSize=$(SIM_ENV_FOREST_TREE_SIZE) \
 			--treeHeight=$(SIM_ENV_FOREST_TREE_HEIGHT) \
+			--scenario=$(SIM_SCENARIO) \
+			--wipeDirection=$(SIM_SCENARIO_WIPE_DIRECTION) \
+			--wipeSpeed=$(SIM_SCENARIO_WIPE_SPEED) \
 			--resultsPath="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}"
 
 debug:
