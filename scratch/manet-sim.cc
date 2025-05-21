@@ -53,6 +53,10 @@ void SniffMonitorRx(Ptr<const Packet> pkt, uint16_t channelFreqMhz, WifiTxVector
 void TxLogger(Ptr<const Packet> pkt);
 void RxLogger(Ptr<const Packet> pkt, const Address& from);
 
+// Control node status
+void BringNodeDown(Ptr<Node> node);
+void BringNodeUp(Ptr<Node> node);
+
 //
 // VARIABLES
 //
@@ -80,6 +84,7 @@ std::ostringstream packetsCsv;
 // States
 std::vector<bool> g_isSpineNode;
 std::map<uint32_t, std::set<Mac48Address>> g_neighbors;
+std::vector<bool> g_isUp;
 
 NS_LOG_COMPONENT_DEFINE("MANETSim");
 
@@ -210,8 +215,13 @@ int main(int argc, char* argv[]) {
 
   // Mark spine nodes with global flag
   g_isSpineNode.assign(nodesNum, false);
+
+  // Mark all nodes online (online by default)
+  g_isUp.assign(nodesNum, true);
+
   for (uint32_t i = 0; i < spine.GetN(); i++) {
     uint32_t id = spine.Get(i)->GetId();
+    g_isUp[id] = true;
     g_isSpineNode[id] = true;
   }
 
@@ -258,7 +268,7 @@ int main(int argc, char* argv[]) {
   movementCsvOutput << "id,time,node,x,y,z,speed" << std::endl;
   Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectMovementData, nodes);
 
-  linkStateCsvOutput << "id,time,node,link" << std::endl;
+  linkStateCsvOutput << "id,time,node,link,online" << std::endl;
   Simulator::Schedule(Seconds(warmupTime + samplingFreq), &collectConnectivityData, nodes);
 
   packetsCsv << "id,time,node,uid,size,received" << std::endl;
@@ -426,21 +436,6 @@ int main(int argc, char* argv[]) {
   // Trace every receive at *any* PacketSink
   Config::ConnectWithoutContext("/NodeList/*/ApplicationList/*/$ns3::PacketSink/Rx", MakeCallback(&RxLogger));
 
-  // // PCAP capture
-  // if (bPcapEnable) {
-  //   wifiPhy.SetPcapDataLinkType(WifiPhyHelper::DLT_IEEE802_11_RADIO);
-  //   wifiPhy.EnablePcap("adhoc-simulation", devices);
-  //   // TODO: Add per devices enable
-  // }
-
-  // // NetAnim
-  // if (bNetAnim) {
-  //     AnimationInterface anim("adhoc-simulation.xml");
-  //     // TODO: Add per node configuration
-  //     // anim.SetConstantPosition(nodes.Get(0), 10, 10);
-  //     // anim.SetConstantPosition(nodes.Get(1), 20, 20);
-  // }
-
   // Declare stopping time
   Simulator::Stop(Seconds(warmupTime + simulationTime));
 
@@ -523,8 +518,9 @@ void collectConnectivityData(const NodeContainer& nodes) {
 
   for (uint32_t i = 0; i < nodes.GetN(); i++) {
     bool linkUp = !g_neighbors[nodes.Get(i)->GetId()].empty();
+    bool isUp = g_isUp[nodes.Get(i)->GetId()];
     linkStateCsvOutput << linkStateCsvOutputIterator++ << ',' << simNowTime.GetSeconds() << ',' << nodes.Get(i)->GetId()
-                       << "," << linkUp << std::endl;
+                       << "," << linkUp << "," << isUp << std::endl;
     // clear for next interval
     g_neighbors[nodes.Get(i)->GetId()].clear();
   }
@@ -621,4 +617,24 @@ void RxLogger(Ptr<const Packet> pkt, const Address& from) {
   // time,node,uid,size
   packetsCsv << packetsCsvIterator++ << "," << t << "," << nodeName << "," << pkt->GetUid() << "," << pkt->GetSize()
              << ',' << 1 << std::endl;
+}
+
+// Stop node
+void BringNodeDown(Ptr<Node> node) {
+  uint32_t id = node->GetId();
+  g_isUp[id] = false;
+
+  Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+  ipv4->SetDown(1);
+  std::cout << Simulator::Now().GetSeconds() << "s: Node " << node->GetId() << " interface DOWN\n";
+}
+
+// Start node
+void BringNodeUp(Ptr<Node> node) {
+  uint32_t id = node->GetId();
+  g_isUp[id] = true;
+
+  Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+  ipv4->SetUp(1);
+  std::cout << Simulator::Now().GetSeconds() << "s: Node " << node->GetId() << " interface UP\n";
 }
