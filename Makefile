@@ -56,7 +56,8 @@ analyze:
 			--connectivity="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/connectivity.csv" \
 			--plot="$(SIM_RESULTS_PATH)/$(TIMEDATE_STR)/{}/movement_plot.png" \
 			--xmax="$(SIM_AREA_SIZE_X)" \
-			--ymax="$(SIM_AREA_SIZE_Y)"
+			--ymax="$(SIM_AREA_SIZE_Y)" \
+			--series=$(SIM_PACKETS_PER_SECOND)
 
 run_ns3:
 	echo $(SIM_RNG_RUNS) | tr ' ' '\n' | /usr/bin/parallel \

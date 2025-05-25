@@ -147,7 +147,7 @@ int main(int argc, char* argv[]) {
   cmd.AddValue("spineVariant", "Percentage of nodes working as servers: centroid | horizontal", spineVariant);
   cmd.AddValue("packetsPerSecond", "Number of packets sent every second from nodes to each spine", packetsPerSecond);
   cmd.AddValue("packetsSize", "Size of the sent packets", packetsSize);
-  cmd.AddValue("wifiChannelWidth", "Size of the WiFi channel: 20 | 40 | 80 | 160 (MHz)", packetsSize);
+  cmd.AddValue("wifiChannelWidth", "Size of the WiFi channel: 20 | 40 | 80 | 160 (MHz)", wifiChannelWidth);
   cmd.AddValue("resultsPath", "Path to store the simulation results", resultsPathString);
   cmd.AddValue("rngRun", "Number of the run", rngRun);
   cmd.AddValue("rngSeed", "Seed used for the simulation", rngSeed);
@@ -330,7 +330,7 @@ int main(int argc, char* argv[]) {
 
     Ptr<UniformRandomVariable> uvY = CreateObject<UniformRandomVariable>();
     uvY->SetAttribute("Min", DoubleValue(0.0));
-    uvY->SetAttribute("Max", DoubleValue(areaSizeX));
+    uvY->SetAttribute("Max", DoubleValue(areaSizeY));
 
     for (uint32_t i = 0; i < treeCount; ++i) {
       Ptr<Building> tree = CreateObject<Building>();

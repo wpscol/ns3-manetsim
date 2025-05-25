@@ -142,12 +142,12 @@ def compute_health_over_time(
 
     return results
 
-def analyze_health(path: str, steps: int = 10):
+def analyze_health(path: str, series_size: int, steps: int = 10):
     # load & prepare
     df_send, merged, normal_ids, spine_ids, t0, t1 = load_and_merge_packets(path)
 
-    # infer series size
-    series_size = infer_series_size_from_runs(df_send)
+    if series_size is None:
+        series_size = infer_series_size_from_runs(df_send)
     print(f"\nInferred series size = {series_size}\n")
 
     # static per-node health
@@ -312,6 +312,7 @@ def main():
     parser = argparse.ArgumentParser(description="Unified MANET analysis")
     parser.add_argument("--packets", help="packets.csv path")
     parser.add_argument("--nodes",   type=int,   help="number of numeric nodes")
+    parser.add_argument("--series",  type=int,   help="series size for availability calc")
     parser.add_argument("--movement",help="movement.csv path")
     parser.add_argument("--connectivity", help="connectivity.csv path")
     parser.add_argument("--plot",     help="output path for movement plot")
@@ -323,7 +324,11 @@ def main():
     args = parser.parse_args()
 
     if args.packets:
-        analyze_health(args.packets, args.nodes)
+        analyze_health(
+            args.packets,
+            steps=10,
+            series_size=args.series
+        )
 
     if args.movement:
         analyze_movement(args.movement)
