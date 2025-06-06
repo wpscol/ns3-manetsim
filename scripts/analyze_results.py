@@ -29,6 +29,7 @@ def load_and_merge_packets(path: str):
     """
     Load packets CSV, split sends/receives, merge them,
     and identify spine vs normal nodes. Also return time bounds.
+    Now includes receive timestamps for delay calculation.
     """
     df = pd.read_csv(path, dtype={"node": str})
     for col in ("node", "time", "uid", "received"):
@@ -39,13 +40,13 @@ def load_and_merge_packets(path: str):
     df_send = df[df["received"] == 0].rename(columns={"time": "time_send"})
     df_recv = (
         df[df["received"] == 1]
-        .loc[:, ["uid", "node"]]
-        .rename(columns={"node": "recv_node"})
+        .loc[:, ["uid", "time", "node"]]
+        .rename(columns={"time": "time_recv", "node": "recv_node"})
     )
 
-    # merge so each send knows its (optional) receiver
+    # merge so each send knows its (optional) receiver and receive time
     merged = pd.merge(
-        df_send[["uid", "time_send", "node"]],
+        df_send[["uid", "time_send", "node", "size"]],
         df_recv,
         on="uid", how="left"
     )
@@ -142,6 +143,106 @@ def compute_health_over_time(
 
     return results
 
+def compute_qos(merged: pd.DataFrame, normal_ids, spine_ids, t0: float, t1: float):
+    """
+    Compute per-node QoS metrics _and_ overall averages:
+      - total_sent: number of packets sent by node
+      - total_received: number of packets successfully received by any spine
+      - pdr: packet delivery ratio
+      - avg_delay: average end-to-end delay (time_recv - time_send)
+      - throughput: total bits received at spine per simulation duration (bits/sec)
+    Additionally, compute average PDR, average delay and average throughput across all normal nodes.
+    Returns:
+      dfq: DataFrame indeksowany po nazwie węzła z kolumnami:
+           ['total_sent','total_received','pdr','avg_delay','throughput']
+      averages: słownik z kluczami 'avg_pdr', 'avg_delay', 'avg_throughput'
+    """
+    records = []
+    sim_duration = t1 - t0 if (t1 - t0) > 0 else 1.0
+
+    # Liste metrów dla liczenia uśrednionych wartości
+    pdr_list = []
+    delay_list = []
+    throughput_list = []
+
+    for node in normal_ids:
+        sub = merged[merged["node"] == node]
+        total_sent = len(sub)
+
+        received_df = sub[sub["recv_node"].notna()]
+        total_received = len(received_df)
+
+        # PDR
+        if total_sent > 0:
+            pdr = total_received / total_sent
+        else:
+            pdr = float("nan")
+
+        # opóźnienie
+        if total_received > 0:
+            delays = received_df["time_recv"] - received_df["time_send"]
+            avg_delay = delays.mean()
+        else:
+            avg_delay = float("nan")
+
+        # throughput
+        if total_received > 0:
+            total_bits = (received_df["size"] * 8).sum()
+            throughput = total_bits / sim_duration
+        else:
+            throughput = 0.0
+
+        records.append([
+            node,
+            total_sent,
+            total_received,
+            pdr,
+            avg_delay,
+            throughput
+        ])
+
+        # dodajemy do list pomocniczych, jeśli wartość nie jest NaN
+        if not math.isnan(pdr):
+            pdr_list.append(pdr)
+        if not math.isnan(avg_delay):
+            delay_list.append(avg_delay)
+        # throughput dla węzła=0.0 nan osobno nie liczymy
+        throughput_list.append(throughput)
+
+    # Tworzymy DataFrame per‐node
+    dfq = pd.DataFrame(
+        records,
+        columns=[
+            "node",
+            "total_sent",
+            "total_received",
+            "pdr",
+            "avg_delay",
+            "throughput"
+        ]
+    ).set_index("node")
+
+    # Obliczanie średnich wartości QoS
+    # (pomijamy węzły, które nie wysłały nic lub nie odebrały nic w przypadku opóźnienia)
+    avg_pdr = np.nan if len(pdr_list) == 0 else np.mean(pdr_list)
+    avg_delay = np.nan if len(delay_list) == 0 else np.mean(delay_list)
+    avg_throughput = np.nan if len(throughput_list) == 0 else np.mean(throughput_list)
+
+    # Formatowanie kolumn dla czytelności
+    dfq["pdr"] = dfq["pdr"].map(lambda v: f"{v*100:.2f}%" if not math.isnan(v) else "NaN")
+    dfq["avg_delay"] = dfq["avg_delay"].map(lambda v: f"{v:.5f}" if not math.isnan(v) else "NaN")
+    dfq["throughput"] = dfq["throughput"].map(lambda v: f"{v:.2f}")
+
+    # Zwracamy DataFrame oraz słownik ze średnimi wartościami
+    averages = {
+        "avg_pdr": avg_pdr,
+        "avg_delay": avg_delay,
+        "avg_throughput": avg_throughput
+    }
+    return dfq, averages
+
+
+
 def analyze_health(path: str, series_size: int, steps: int = 10):
     # load & prepare
     df_send, merged, normal_ids, spine_ids, t0, t1 = load_and_merge_packets(path)
@@ -169,6 +270,34 @@ def analyze_health(path: str, series_size: int, steps: int = 10):
     pd.DataFrame(results, columns=["percent","health_fraction"]).to_csv(out2, index=False)
     print(f"\nHealth over time written to {out2}\n")
 
+    # compute QoS metrics
+    dfq, avg_vals = compute_qos(merged, normal_ids, spine_ids, t0, t1)
+    print("=== QoS METRICS PER NODE ===")
+    print(dfq.to_string())
+    # zapisz dfq do pliku
+    out3 = os.path.splitext(path)[0] + "_qos_per_node.csv"
+    dfq.to_csv(out3)
+    print(f"QoS metrics per node written to {out3}\n")
+
+    # teraz możemy wypisać średnie QoS:
+    print("=== AVERAGE QoS ACROSS ALL NORMAL NODES ===")
+    if not math.isnan(avg_vals["avg_pdr"]):
+        print(f"Average PDR:        {avg_vals['avg_pdr']*100:.2f}%")
+    else:
+        print("Average PDR:        NaN")
+    if not math.isnan(avg_vals["avg_delay"]):
+        print(f"Average Delay:      {avg_vals['avg_delay']:.5f} s")
+    else:
+        print("Average Delay:      NaN")
+    if not math.isnan(avg_vals["avg_throughput"]):
+        print(f"Average Throughput: {avg_vals['avg_throughput']:.2f} bits/s")
+    else:
+        print("Average Throughput: NaN")
+
+
+    out3 = os.path.splitext(path)[0] + "_qos_per_node.csv"
+    dfq.to_csv(out3)
+    print(f"QoS metrics per node written to {out3}\n")
 
 def analyze_movement(path: str):
     df = pd.read_csv(path)
@@ -178,7 +307,6 @@ def analyze_movement(path: str):
     print(f"Nodes: {len(df['node'].unique())}")
     print(f"X range: {df['x'].min():.2f}-{df['x'].max():.2f}, Y range: {df['y'].min():.2f}-{df['y'].max():.2f}")
     print(f"Speed mean/std/min/max: {df['speed'].mean():.3f}/{df['speed'].std():.3f}/{df['speed'].min():.3f}/{df['speed'].max():.3f}")
-
 
 def analyze_connectivity(path: str, nodes_per_group: int = 5):
     df = pd.read_csv(path)
@@ -214,7 +342,6 @@ def analyze_connectivity(path: str, nodes_per_group: int = 5):
         print(f"Nodes {group[0]}–{group[-1]}:")
         print(panel.to_string())
         print()
-
 
 def plot_movement(
     movement_path: str,
